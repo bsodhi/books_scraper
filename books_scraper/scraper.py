@@ -1,0 +1,260 @@
+import os
+import glob
+import csv
+import re
+import lxml
+import time
+import requests
+import random
+import traceback
+import argparse
+import urllib3
+import scholarly
+from pathlib import Path
+from bs4 import BeautifulSoup
+from datetime import datetime as DT
+from fake_useragent import UserAgent
+from selenium import webdriver
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.common.by import By
+from selenium.common.exceptions import TimeoutException
+from getpass import getpass
+
+# Disable the SSL warnings
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+UA = UserAgent()
+FIXED_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.14; rv:74.0) Gecko/20100101 Firefox/74.0"
+DEBUG = False
+HTTP_TIMEOUT_SEC = 5
+HTTP_DELAY_SEC = 2
+ROW_KEYS = ["author", "title", "isbn", "language", "avg_rating",
+            "ratings", "pub_year", "book_format", "pages", "genre"]
+GS_ROW_KEYS = ["author", "title", "citedby", "url", "abstract"]
+
+
+class Obj:
+    """A wrapper for some value which can be passed around by reference.
+    """
+    val = 0
+
+
+def log(msg):
+    ts = DT.now().strftime("%Y-%m-%d@%I:%M:%S%p")
+    print("[{0}] : {1}".format(ts, msg))
+
+
+def debug(msg):
+    if DEBUG:
+        log(msg)
+
+
+def start_selenium(html_dir, genre_list, pps):
+    gr_user = input("Goodreads login ID (an email address): ")
+    gr_pass = getpass(prompt="Password: ")
+
+    browser = webdriver.Firefox()
+    login_url = "https://www.goodreads.com/user/sign_in"
+    browser.get(login_url)
+    username = browser.find_element_by_id("user_email")
+    password = browser.find_element_by_id("user_password")
+    username.send_keys(gr_user)
+    password.send_keys(gr_pass)
+
+    # username.send_keys("wenox85809@hxqmail.com")
+    # password.send_keys("chamanLAL")
+    browser.find_element_by_name("sign_in").submit()
+
+    delay = 5  # seconds
+    myElem = WebDriverWait(browser, delay).until(
+        EC.presence_of_element_located((By.CLASS_NAME, 'siteHeader__personal')))
+    log("Loaded the user home page.")
+    print(browser.title)
+    if "Recent updates" in browser.title:
+        shelf_url = "https://www.goodreads.com/shelf/show/{0}?page={1}"
+        for gn in genre_list.split(","):
+            for p in range(1, int(pps) + 1):
+                time.sleep(2)
+                url = shelf_url.format(gn, p)
+                log("Fetching ["+url+"]")
+                browser.get(url)
+                html_source = browser.page_source
+                out_file = "{0}/{1}_p{2}.html".format(html_dir, gn, p)
+                with open(out_file, "w") as html:
+                    html.write(html_source)
+                    log("Saved HTML at: "+html.name)
+        log("Closing the browser")
+        browser.close()
+    else:
+        raise Exception("Failed to load the landing page.")
+
+
+def make_http_request(url):
+    log("Requesting URL {0}. Delay {1}s".format(url, HTTP_DELAY_SEC))
+    time.sleep(HTTP_DELAY_SEC)
+    return requests.get(url,
+                        headers={'User-Agent': UA.random},
+                        timeout=HTTP_TIMEOUT_SEC)
+
+
+def make_page_soup(page_url):
+    page = make_http_request(page_url)
+    if page.status_code == requests.codes.ok:
+        return BeautifulSoup(page.content, 'lxml')
+    else:
+        log("Failed to get page at URL {0}. Error: {1}".format(
+            page_url, page.reason))
+
+
+def make_file_soup(html_file):
+    with open(html_file) as fp:
+        return BeautifulSoup(fp, 'lxml')
+
+
+def get_book_detail(url):
+    book_info = {"book_format": "--", "pages": "--",
+                 "isbn": "--", "language": "--", "pub_year": "--"}
+    soup = make_page_soup("https://www.goodreads.com"+url)
+
+    if not soup:
+        return book_info
+
+    dn = soup.find("div", {"id": "details", "class": "uitext darkGreyText"})
+    if dn:
+        # dn = soup.find("div#details.uitext.darkGreyText")
+        temp = dn.find("span", {"itemprop": "bookFormat"})
+        book_format = temp.text if temp else "--"
+        temp = dn.find("span", {"itemprop": "numberOfPages"})
+        pages = temp.text if temp else "--"
+
+        isbns = dn.select("div.clearFloats:nth-child(2) > div:nth-child(1)")
+        isbn = "--"
+        try:
+            if isbns and isbns[0].text == "ISBN":
+                isbn = dn.select(
+                    "div.clearFloats:nth-child(2) > div:nth-child(2)")[0].text
+        except AttributeError:
+            log("\t**** Could not find ISBN.")
+
+        temp = dn.find("div", {"itemprop": "inLanguage"})
+        lang = temp.text if temp else "--"
+
+        pub_yr = soup.select("div.row:nth-child(2)")
+        pub_yr = pub_yr[0].text if pub_yr else "--"
+        return {"book_format": book_format, "pages": pages, "isbn": isbn, "language": lang, "pub_year": pub_yr}
+    else:
+        return book_info
+
+
+def extract_data(genre, writer, soup, books_count):
+    sel = ".mainContent .leftContainer .elementList"
+    for n in soup.select(sel):
+        try:
+            book = {}
+            book["genre"] = genre
+            temp = n.find("a", {"class": "bookTitle"})
+            book["title"] = temp.text if temp else "--"
+            book_url = n.find("a", {"class": "bookTitle"})["href"]
+            temp = n.find("span", {"itemprop": "name"})
+            book["author"] = temp.text if temp else "--"
+            temp = n.find("span", {"class": "greyText smallText"})
+            extra_info = temp.text if temp else "--"
+            temp = re.findall(r"rating.(.+?)\s", extra_info)
+            book["avg_rating"] = temp[0] if temp else "--"
+            temp = re.findall(r"(?<=\s).+?(?=ratings)", extra_info)
+            book["ratings"] = temp[0] if temp else "--"
+
+            book.update(get_book_detail(book_url))
+            writer.writerow(book)
+            books_count.val += 1
+            print("Processed {0} books.".format(books_count.val))
+        except Exception as ex:
+            msg = str(ex)
+            log("Error in getting book info: "+msg+". Continuing.")
+            if DEBUG:
+                traceback.print_exc()
+            if "ConnectionResetError" in msg:
+                log("Waiting for 15s before attempting next request.")
+                time.sleep(15)
+
+
+def crawl(html_dir):
+    save_path = 'books_data.csv'
+    bc = Obj()
+    try:
+        with open(save_path, "w", newline='') as csvfile:
+            dw = csv.DictWriter(csvfile, ROW_KEYS, extrasaction='ignore')
+            dw.writeheader()
+            htmls = glob.glob("{0}/*.html".format(html_dir))
+            for h in htmls:
+                log("Extracting data from {0}".format(h))
+                gnr = h.split("/")[-1].split("_")[0]
+                extract_data(gnr, dw, make_file_soup(h), books_count=bc)
+
+    except Exception as ex:
+        log("Error occurred when crawing: "+str(ex))
+        traceback.print_exc()
+    except KeyboardInterrupt:
+        log("Exiting on user request (pressed Ctrl+C)")
+    log("Total books = "+str(bc.val))
+
+
+def fetch_google_scholar_data(query_str, max_records):
+    log("Fetching data from Google Scholar. Query: [{0}]. Max. records: [{1}]".format(query_str, max_records))
+    sq = scholarly.search_pubs_query(query_str)
+    data_recs = []
+    bc = Obj()
+    for pg in range(1, max_records+1):
+        try:
+            data = next(sq)
+            print(data)
+            temp = {}
+            temp["title"] = data.bib["title"]
+            temp["abstract"] = data.bib["abstract"]
+            temp["author"] = data.bib["author"]
+            temp["url"] = data.bib["url"]
+            temp["citedby"] = data.citedby
+            data_recs.append(temp)
+            bc.val += 1
+            log("Fetched {0} records.".format(bc.val))
+        except Exception as ex:
+            log("*** Error occurred when fetching publication data. Continuing to next. "+str(ex))
+
+    save_path = 'google_scholar_data.csv'
+    with open(save_path, "w", newline='') as csvfile:
+        dw = csv.DictWriter(csvfile, GS_ROW_KEYS, extrasaction='ignore')
+        dw.writeheader()
+        for row in data_recs:
+            dw.writerow(row)
+        log("Saved the Google Scholar data at {0}".format(save_path))
+
+
+def main():
+    try:
+        parser = argparse.ArgumentParser()
+        parser.add_argument("data_src", type=str, choices=["scholar", "goodreads"],
+                            help="Which source of data to work with.")
+        parser.add_argument("-q", "--query", type=str,
+                            dest="query", help="Query string to use for Google Scholar. Required only when data source is scholar.")
+        parser.add_argument("-d", "--html-dir", type=str,
+                            dest="html_dir", help="HTML files directory path. Required only when data source is goodreads.")
+        parser.add_argument("-g", "--genre-list", type=str,
+                            dest="genre_list", help="Comma separated list of genre names. Required only for remote crawling case. Required only when data source is goodreads.")
+        parser.add_argument("-p", "--pps", type=int, default=1,
+                            dest="pps", help="No. of pages per shelf or Max. records in the Google Scholar query result.")
+
+        args = parser.parse_args()
+        if "goodreads" == args.data_src:
+            Path(args.html_dir).mkdir(parents=True, exist_ok=True)
+            # Start the Selenium session
+            start_selenium(args.html_dir, args.genre_list, args.pps)
+            crawl(args.html_dir)
+        else:
+            fetch_google_scholar_data(args.query, args.pps)
+
+    except Exception as ex:
+        log("Exiting. Error occurred. "+str(ex))
+
+if __name__ == "__main__":
+    main()
