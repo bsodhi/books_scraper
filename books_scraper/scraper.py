@@ -221,10 +221,10 @@ def fetch_google_scholar_data(query_str, max_records, out_file):
         try:
             data = next(sq)
             temp = {}
-            temp["title"] = data.bib["title"]
-            temp["abstract"] = data.bib["abstract"]
-            temp["author"] = data.bib["author"]
-            temp["url"] = data.bib["url"]
+            temp["title"] = data.bib["title"] if "title" in data.bib else "--"
+            temp["abstract"] = data.bib["abstract"] if "abstract" in data.bib else "--"
+            temp["author"] = data.bib["author"] if "author" in data.bib else "--"
+            temp["url"] = data.bib["url"] if "url" in data.bib else "--"
             temp["citedby"] = data.citedby
             data_recs.append(temp)
             bc.val += 1
@@ -273,7 +273,7 @@ def main():
         if not overwrite_existing_path(args.out_file):
             log("User declined to overwrite file {}. Aborting.".format(args.out_file))
             return
-        if not overwrite_existing_path(args.html_dir):
+        if args.html_dir and not overwrite_existing_path(args.html_dir):
             log("User declined to use directory {}. Aborting.".format(args.html_dir))
             return
 
