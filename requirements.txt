@@ -1,0 +1,9 @@
+requests
+cryptography
+pyOpenSSL
+lxml
+argparse
+beautifulsoup4
+fake_useragent
+scholarly
+selenium
