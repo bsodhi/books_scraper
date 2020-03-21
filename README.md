@@ -25,5 +25,5 @@ written to the csv file:
 For Google Scholar data, the columns are:
 `["author", "title", "citedby", "url", "abstract"]`
 
-** This code is written by taking lot of help from StackOverflow community and
-Python API documentation. Greatly appreciated! **
+**This code is written by taking lot of help from StackOverflow community and
+Python API documentation. Greatly appreciated!**
