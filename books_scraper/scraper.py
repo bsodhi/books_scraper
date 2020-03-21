@@ -1,3 +1,7 @@
+"""
+Written with a lot of help from StackOverflow community 
+and Python API documentation. Greatly appreciated!
+"""
 import os
 import glob
 import csv
@@ -50,11 +54,19 @@ def debug(msg):
         log(msg)
 
 
-def start_selenium(html_dir, genre_list, pps):
+def start_selenium(web_browser, html_dir, genre_list, pps):
     gr_user = input("Goodreads login ID (an email address): ")
     gr_pass = getpass(prompt="Password: ")
-
-    browser = webdriver.Firefox()
+    if "chrome" == web_browser:
+        browser = webdriver.Chrome()
+    elif "firefox" == web_browser:
+        browser = webdriver.Firefox()
+    elif "safari" == web_browser:
+        browser = webdriver.Safari()
+    elif "edge" == web_browser:
+        browser = webdriver.Edge()
+    else:
+        raise Exception("Unsupported browser: "+web_browser)
     login_url = "https://www.goodreads.com/user/sign_in"
     browser.get(login_url)
     username = browser.find_element_by_id("user_email")
@@ -179,11 +191,10 @@ def extract_data(genre, writer, soup, books_count):
                 time.sleep(15)
 
 
-def crawl(html_dir):
-    save_path = 'books_data.csv'
+def crawl(html_dir, out_file):
     bc = Obj()
     try:
-        with open(save_path, "w", newline='') as csvfile:
+        with open(out_file, "w", newline='') as csvfile:
             dw = csv.DictWriter(csvfile, ROW_KEYS, extrasaction='ignore')
             dw.writeheader()
             htmls = glob.glob("{0}/*.html".format(html_dir))
@@ -200,15 +211,15 @@ def crawl(html_dir):
     log("Total books = "+str(bc.val))
 
 
-def fetch_google_scholar_data(query_str, max_records):
-    log("Fetching data from Google Scholar. Query: [{0}]. Max. records: [{1}]".format(query_str, max_records))
+def fetch_google_scholar_data(query_str, max_records, out_file):
+    log("Fetching data from Google Scholar. Query: [{0}]. Max. records: [{1}]".format(
+        query_str, max_records))
     sq = scholarly.search_pubs_query(query_str)
     data_recs = []
     bc = Obj()
     for pg in range(1, max_records+1):
         try:
             data = next(sq)
-            print(data)
             temp = {}
             temp["title"] = data.bib["title"]
             temp["abstract"] = data.bib["abstract"]
@@ -221,13 +232,22 @@ def fetch_google_scholar_data(query_str, max_records):
         except Exception as ex:
             log("*** Error occurred when fetching publication data. Continuing to next. "+str(ex))
 
-    save_path = 'google_scholar_data.csv'
-    with open(save_path, "w", newline='') as csvfile:
+    with open(out_file, "w", newline='') as csvfile:
         dw = csv.DictWriter(csvfile, GS_ROW_KEYS, extrasaction='ignore')
         dw.writeheader()
         for row in data_recs:
             dw.writerow(row)
-        log("Saved the Google Scholar data at {0}".format(save_path))
+        log("Saved the Google Scholar data at {0}".format(out_file))
+
+
+def overwrite_existing_path(path_str):
+    ow = True
+    if os.path.exists(path_str):
+        fo = input(
+            "Path {0} already exists. Would you like to overwrite it? [yes/no]: ".format(path_str))
+        if fo != "yes":
+            ow = False
+    return ow
 
 
 def main():
@@ -235,8 +255,13 @@ def main():
         parser = argparse.ArgumentParser()
         parser.add_argument("data_src", type=str, choices=["scholar", "goodreads"],
                             help="Which source of data to work with.")
+        parser.add_argument("out_file", type=str,
+                            help="Path of the output file.")
         parser.add_argument("-q", "--query", type=str,
                             dest="query", help="Query string to use for Google Scholar. Required only when data source is scholar.")
+        parser.add_argument("-b", "--browser", type=str,
+                            choices=["chrome", "firefox", "safari", "edge"],
+                            dest="browser", help="Web browser name. Required only when data source is goodreads.")
         parser.add_argument("-d", "--html-dir", type=str,
                             dest="html_dir", help="HTML files directory path. Required only when data source is goodreads.")
         parser.add_argument("-g", "--genre-list", type=str,
@@ -245,16 +270,25 @@ def main():
                             dest="pps", help="No. of pages per shelf or Max. records in the Google Scholar query result.")
 
         args = parser.parse_args()
+        if not overwrite_existing_path(args.out_file):
+            log("User declined to overwrite file {}. Aborting.".format(args.out_file))
+            return
+        if not overwrite_existing_path(args.html_dir):
+            log("User declined to use directory {}. Aborting.".format(args.html_dir))
+            return
+
         if "goodreads" == args.data_src:
             Path(args.html_dir).mkdir(parents=True, exist_ok=True)
             # Start the Selenium session
-            start_selenium(args.html_dir, args.genre_list, args.pps)
-            crawl(args.html_dir)
+            start_selenium(args.browser, args.html_dir,
+                           args.genre_list, args.pps)
+            crawl(args.html_dir, args.out_file)
         else:
-            fetch_google_scholar_data(args.query, args.pps)
+            fetch_google_scholar_data(args.query, args.pps, args.out_file)
 
     except Exception as ex:
         log("Exiting. Error occurred. "+str(ex))
+
 
 if __name__ == "__main__":
     main()
