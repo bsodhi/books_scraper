@@ -33,8 +33,8 @@ FIXED_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.14; rv:74.0) Gecko/2010010
 DEBUG = False
 HTTP_TIMEOUT_SEC = 5
 HTTP_DELAY_SEC = 2
-ROW_KEYS = ["author", "title", "isbn", "language", "avg_rating",
-            "ratings", "pub_year", "book_format", "pages", "genre"]
+ROW_KEYS = ['book_format', 'pages', 'synopsis', 'isbn', 'language',
+            'pub_year', 'url', 'avg_rating', 'ratings', 'reviews', 'author', 'title']
 GS_ROW_KEYS = ["author", "title", "citedby", "url", "abstract"]
 
 
@@ -124,21 +124,50 @@ def make_file_soup(html_file):
         return BeautifulSoup(fp, 'lxml')
 
 
+def _get_pub_date(dt_str):
+    pub_dt = '--'
+    try:
+        s = dt_str.strip()
+        pub_dt = s[s.find("Published")+9:s.find("by")].strip()
+    except AttributeError:
+        log("\t**** Could not find publish date.")
+    return pub_dt
+
+
+def _try_get_item(soup, sel):
+    val = "--"
+    try:
+        val = soup.select(sel)[0].text.strip()
+    except Exception:
+        log("**** Failed to get value for "+sel)
+    return val
+
+
 def get_book_detail(url):
-    book_info = {"book_format": "--", "pages": "--",
-                 "isbn": "--", "language": "--", "pub_year": "--"}
+    book_info = {"book_format": "--", "pages": "--", "synopsis": "--",
+                 "isbn": "--", "language": "--", "pub_year": "--",
+                 "url": url, "avg_rating": "--", "ratings": "--",
+                 "reviews": "--", "author": "--", "title": "--"}
     soup = make_page_soup("https://www.goodreads.com"+url)
 
     if not soup:
         return book_info
 
+    book_info["avg_rating"] = _try_get_item(
+        soup, "#bookMeta > span:nth-child(2)")
+    book_info["ratings"] = _try_get_item(soup, "a.gr-hyperlink:nth-child(7)")
+    book_info["reviews"] = _try_get_item(soup, "a.gr-hyperlink:nth-child(9)")
+    book_info["author"] = _try_get_item(
+        soup, "#bookAuthors > span:nth-child(2)")
+    book_info["title"] = _try_get_item(soup, "#bookTitle")
+
     dn = soup.find("div", {"id": "details", "class": "uitext darkGreyText"})
     if dn:
         # dn = soup.find("div#details.uitext.darkGreyText")
         temp = dn.find("span", {"itemprop": "bookFormat"})
-        book_format = temp.text if temp else "--"
+        book_info["book_format"] = temp.text.strip() if temp else "--"
         temp = dn.find("span", {"itemprop": "numberOfPages"})
-        pages = temp.text if temp else "--"
+        book_info["pages"] = temp.text.strip() if temp else "--"
 
         isbns = dn.select("div.clearFloats:nth-child(2) > div:nth-child(1)")
         isbn = "--"
@@ -148,13 +177,19 @@ def get_book_detail(url):
                     "div.clearFloats:nth-child(2) > div:nth-child(2)")[0].text
         except AttributeError:
             log("\t**** Could not find ISBN.")
+        book_info["isbn"] = isbn.strip()
 
         temp = dn.find("div", {"itemprop": "inLanguage"})
-        lang = temp.text if temp else "--"
+        book_info["language"] = temp.text.strip() if temp else "--"
 
         pub_yr = soup.select("div.row:nth-child(2)")
-        pub_yr = pub_yr[0].text if pub_yr else "--"
-        return {"book_format": book_format, "pages": pages, "isbn": isbn, "language": lang, "pub_year": pub_yr}
+        book_info["pub_year"] = _get_pub_date(
+            pub_yr[0].text) if pub_yr else "--"
+
+        book_info["synopsis"] = _try_get_item(
+            soup, "div#description.readable.stacked")
+        book_info["url"] = url
+        return book_info
     else:
         return book_info
 
@@ -165,18 +200,7 @@ def extract_data(genre, writer, soup, books_count):
         try:
             book = {}
             book["genre"] = genre
-            temp = n.find("a", {"class": "bookTitle"})
-            book["title"] = temp.text if temp else "--"
             book_url = n.find("a", {"class": "bookTitle"})["href"]
-            temp = n.find("span", {"itemprop": "name"})
-            book["author"] = temp.text if temp else "--"
-            temp = n.find("span", {"class": "greyText smallText"})
-            extra_info = temp.text if temp else "--"
-            temp = re.findall(r"rating.(.+?)\s", extra_info)
-            book["avg_rating"] = temp[0] if temp else "--"
-            temp = re.findall(r"(?<=\s).+?(?=ratings)", extra_info)
-            book["ratings"] = temp[0] if temp else "--"
-
             book.update(get_book_detail(book_url))
             writer.writerow(book)
             books_count.val += 1
@@ -257,6 +281,8 @@ def main():
                             help="Which source of data to work with.")
         parser.add_argument("out_file", type=str,
                             help="Path of the output file.")
+        parser.add_argument("pps", type=int,
+                            help="No. of pages per shelf or Max. records in the Google Scholar query result.")
         parser.add_argument("-q", "--query", type=str,
                             dest="query", help="Query string to use for Google Scholar. Required only when data source is scholar.")
         parser.add_argument("-b", "--browser", type=str,
@@ -266,18 +292,26 @@ def main():
                             dest="html_dir", help="HTML files directory path. Required only when data source is goodreads.")
         parser.add_argument("-g", "--genre-list", type=str,
                             dest="genre_list", help="Comma separated list of genre names. Required only for remote crawling case. Required only when data source is goodreads.")
-        parser.add_argument("-p", "--pps", type=int, default=1,
-                            dest="pps", help="No. of pages per shelf or Max. records in the Google Scholar query result.")
+        parser.add_argument("-v", "--verbose", type=bool, nargs='?',
+                            const=True, default=False,
+                            dest="verbose", help="Print debug information.")
 
         args = parser.parse_args()
+        if args.verbose:
+            global DEBUG
+            DEBUG = True
         if not overwrite_existing_path(args.out_file):
             log("User declined to overwrite file {}. Aborting.".format(args.out_file))
             return
-        if args.html_dir and not overwrite_existing_path(args.html_dir):
-            log("User declined to use directory {}. Aborting.".format(args.html_dir))
-            return
 
         if "goodreads" == args.data_src:
+            if not (args.genre_list and args.browser and args.html_dir):
+                log("Please supply required parameters: genre list, browser and html directory.")
+                return
+            if not overwrite_existing_path(args.html_dir):
+                log("User declined to use directory {}. Aborting.".format(args.html_dir))
+                return
+
             Path(args.html_dir).mkdir(parents=True, exist_ok=True)
             # Start the Selenium session
             start_selenium(args.browser, args.html_dir,
