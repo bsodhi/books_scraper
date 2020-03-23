@@ -57,6 +57,7 @@ def debug(msg):
 def start_selenium(web_browser, html_dir, genre_list, pps, overwrite="merge"):
     gr_user = input("Goodreads login ID (an email address): ")
     gr_pass = getpass(prompt="Password: ")
+    log("Starting webdriver...")
     if "chrome" == web_browser:
         browser = webdriver.Chrome()
     elif "firefox" == web_browser:
@@ -72,6 +73,7 @@ def start_selenium(web_browser, html_dir, genre_list, pps, overwrite="merge"):
         raise Exception("Unsupported browser: "+web_browser)
     login_url = "https://www.goodreads.com/user/sign_in"
     browser.get(login_url)
+    log("Loaded login page.")
     username = browser.find_element_by_id("user_email")
     password = browser.find_element_by_id("user_password")
     username.send_keys(gr_user)
@@ -80,12 +82,17 @@ def start_selenium(web_browser, html_dir, genre_list, pps, overwrite="merge"):
     # username.send_keys("wenox85809@hxqmail.com")
     # password.send_keys("chamanLAL")
     browser.find_element_by_name("sign_in").submit()
-
+    log("Sent login request to website.")
     delay = 5  # seconds
-    myElem = WebDriverWait(browser, delay).until(
-        EC.presence_of_element_located((By.CLASS_NAME, 'siteHeader__personal')))
-    log("Loaded the user home page.")
-    print(browser.title)
+    try:
+        myElem = WebDriverWait(browser, delay).until(
+            EC.presence_of_element_located((By.CLASS_NAME, 'siteHeader__personal')))
+        log("Loaded the user home page.")
+        print(browser.title)
+    except Exception:
+        log("Failed to login.")
+        raise
+    
     if "Recent updates" in browser.title:
         shelf_url = "https://www.goodreads.com/shelf/show/{0}?page={1}"
         for gn in genre_list.split(","):
@@ -271,7 +278,7 @@ def fetch_google_scholar_data(query_str, max_records, out_file):
 
 
 def overwrite_existing_path(path_str, options=None):
-    fo = "no"
+    fo = "yes"
     if os.path.exists(path_str):
         fo = input(
             "Path {0} already exists. Would you like to overwrite it? {1}: ".format(path_str, options if options else "[yes/no]"))
