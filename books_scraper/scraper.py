@@ -60,7 +60,10 @@ def start_selenium(web_browser, html_dir, genre_list, pps):
     if "chrome" == web_browser:
         browser = webdriver.Chrome()
     elif "firefox" == web_browser:
-        browser = webdriver.Firefox()
+        from selenium.webdriver.firefox.options import Options
+        opt = Options()
+        opt.headless = True
+        browser = webdriver.Firefox(options=opt)
     elif "safari" == web_browser:
         browser = webdriver.Safari()
     elif "edge" == web_browser:
