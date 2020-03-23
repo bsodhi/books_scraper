@@ -297,7 +297,11 @@ def main():
         parser.add_argument("pps", type=int,
                             help="No. of pages per shelf or Max. records in the Google Scholar query result.")
         parser.add_argument("-q", "--query", type=str,
-                            dest="query", help="Query string to use for Google Scholar. Required only when data source is scholar.")
+                            dest="query", help="""
+                            Query string to use for Google Scholar. Multiple queries
+                            can be supplied as comma-separated list.
+                            Required only when data source is scholar.
+                            """)
         parser.add_argument("-b", "--browser", type=str,
                             choices=["chrome", "firefox", "safari", "edge"],
                             dest="browser", help="Web browser name. Required only when data source is goodreads.")
@@ -334,7 +338,9 @@ def main():
                            args.genre_list, args.pps, overwrite=oep)
             crawl(args.html_dir, args.out_file)
         else:
-            fetch_google_scholar_data(args.query, args.pps, args.out_file)
+            for q in args.query.split(","):
+                out_file = "{0}_{1}".format(q.replace(" ", "_"), args.out_file)
+                fetch_google_scholar_data(q, args.pps, out_file)
 
     except Exception as ex:
         log("Exiting. Error occurred. "+str(ex))
