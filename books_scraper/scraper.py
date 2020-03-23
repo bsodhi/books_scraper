@@ -54,7 +54,7 @@ def debug(msg):
         log(msg)
 
 
-def start_selenium(web_browser, html_dir, genre_list, pps):
+def start_selenium(web_browser, html_dir, genre_list, pps, overwrite="merge"):
     gr_user = input("Goodreads login ID (an email address): ")
     gr_pass = getpass(prompt="Password: ")
     if "chrome" == web_browser:
@@ -90,12 +90,15 @@ def start_selenium(web_browser, html_dir, genre_list, pps):
         shelf_url = "https://www.goodreads.com/shelf/show/{0}?page={1}"
         for gn in genre_list.split(","):
             for p in range(1, int(pps) + 1):
-                time.sleep(2)
+                out_file = "{0}/{1}_p{2}.html".format(html_dir, gn, p)
                 url = shelf_url.format(gn, p)
+                if overwrite == "merge" and os.path.exists(out_file):
+                    log("Page {0} already downloaded. Skipping to next.".format(url))
+                    continue
+                time.sleep(2)
                 log("Fetching ["+url+"]")
                 browser.get(url)
                 html_source = browser.page_source
-                out_file = "{0}/{1}_p{2}.html".format(html_dir, gn, p)
                 with open(out_file, "w") as html:
                     html.write(html_source)
                     log("Saved HTML at: "+html.name)
@@ -267,14 +270,13 @@ def fetch_google_scholar_data(query_str, max_records, out_file):
         log("Saved the Google Scholar data at {0}".format(out_file))
 
 
-def overwrite_existing_path(path_str):
-    ow = True
+def overwrite_existing_path(path_str, options=None):
+    fo = "no"
     if os.path.exists(path_str):
         fo = input(
-            "Path {0} already exists. Would you like to overwrite it? [yes/no]: ".format(path_str))
-        if fo != "yes":
-            ow = False
-    return ow
+            "Path {0} already exists. Would you like to overwrite it? {1}: ".format(path_str, options if options else "[yes/no]"))
+
+    return fo
 
 
 def main():
@@ -303,22 +305,23 @@ def main():
         if args.verbose:
             global DEBUG
             DEBUG = True
-        if not overwrite_existing_path(args.out_file):
-            log("User declined to overwrite file {}. Aborting.".format(args.out_file))
+        if "no" == overwrite_existing_path(args.out_file):
+            log("User declined to overwrite file {0}. Aborting.".format(args.out_file))
             return
 
         if "goodreads" == args.data_src:
             if not (args.genre_list and args.browser and args.html_dir):
                 log("Please supply required parameters: genre list, browser and html directory.")
                 return
-            if not overwrite_existing_path(args.html_dir):
-                log("User declined to use directory {}. Aborting.".format(args.html_dir))
+            oep = overwrite_existing_path(args.html_dir, "[yes/no/merge]")
+            if "no" == oep:
+                log("User declined to overwrite directory {0}. Aborting.".format(args.html_dir))
                 return
 
             Path(args.html_dir).mkdir(parents=True, exist_ok=True)
             # Start the Selenium session
             start_selenium(args.browser, args.html_dir,
-                           args.genre_list, args.pps)
+                           args.genre_list, args.pps, overwrite=oep)
             crawl(args.html_dir, args.out_file)
         else:
             fetch_google_scholar_data(args.query, args.pps, args.out_file)
