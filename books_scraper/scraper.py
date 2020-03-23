@@ -33,8 +33,9 @@ FIXED_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.14; rv:74.0) Gecko/2010010
 DEBUG = False
 HTTP_TIMEOUT_SEC = 5
 HTTP_DELAY_SEC = 2
-ROW_KEYS = ['book_format', 'pages', 'synopsis', 'isbn', 'language',
-            'pub_year', 'url', 'avg_rating', 'ratings', 'reviews', 'author', 'title']
+ROW_KEYS = ['author', 'title', 'language', 'genre', 'avg_rating',
+            'ratings', 'reviews', 'book_format', 'pages', 
+            'isbn', 'pub_year', 'url', 'synopsis']
 GS_ROW_KEYS = ["author", "title", "citedby", "url", "abstract"]
 
 
@@ -92,7 +93,7 @@ def start_selenium(web_browser, html_dir, genre_list, pps, overwrite="merge"):
     except Exception:
         log("Failed to login.")
         raise
-    
+
     if "Recent updates" in browser.title:
         shelf_url = "https://www.goodreads.com/shelf/show/{0}?page={1}"
         for gn in genre_list.split(","):
@@ -313,7 +314,8 @@ def main():
             global DEBUG
             DEBUG = True
         if "no" == overwrite_existing_path(args.out_file):
-            log("User declined to overwrite file {0}. Aborting.".format(args.out_file))
+            log("User declined to overwrite file {0}. Aborting.".format(
+                args.out_file))
             return
 
         if "goodreads" == args.data_src:
@@ -322,7 +324,8 @@ def main():
                 return
             oep = overwrite_existing_path(args.html_dir, "[yes/no/merge]")
             if "no" == oep:
-                log("User declined to overwrite directory {0}. Aborting.".format(args.html_dir))
+                log("User declined to overwrite directory {0}. Aborting.".format(
+                    args.html_dir))
                 return
 
             Path(args.html_dir).mkdir(parents=True, exist_ok=True)

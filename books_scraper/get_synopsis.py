@@ -30,8 +30,9 @@ FIXED_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.14; rv:74.0) Gecko/2010010
 DEBUG = False
 HTTP_TIMEOUT_SEC = 5
 HTTP_DELAY_SEC = 2
-ROW_KEYS = ['book_format', 'pages', 'synopsis', 'isbn', 'language',
-            'pub_year', 'url', 'avg_rating', 'ratings', 'reviews', 'author', 'title']
+ROW_KEYS = ['author', 'title', 'language', 'genre', 'avg_rating',
+            'ratings', 'reviews', 'book_format', 'pages', 
+            'isbn', 'pub_year', 'url', 'synopsis']
 GS_ROW_KEYS = ["author", "title", "citedby", "url", "abstract"]
 
 
@@ -156,6 +157,7 @@ def main(in_file, out_file):
                             "a", {"class": "bookTitle"})["href"]
                         if book_url:
                             book = get_book_detail(book_url.split("?")[0])
+                            book["genre"] = row['genre']
                             dw.writerow(book)
                             bc.val += 1
                             print("Processed {0} books.".format(bc.val))

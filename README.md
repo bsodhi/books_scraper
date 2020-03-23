@@ -2,7 +2,8 @@
 Books scraper for Google Scholar and Goodreads
 
 ## Prerequisites
-This program makes use of [Selenium WebDriver](https://www.selenium.dev/documentation/en/webdriver/driver_requirements/)
+1. Install Python for your operating. You can [download Python 3.8.2 from here](https://www.python.org/downloads/release/python-382/).
+2. This program makes use of [Selenium WebDriver](https://www.selenium.dev/documentation/en/webdriver/driver_requirements/)
 for fetching GoodReads book shelf data. You should have a driver installed for your
 browser. Currently supported browsers are: Chrome, Firefox, Edge and Safari. We have tested with Firefox and Safari (on macOSX 10.14.6).
 
