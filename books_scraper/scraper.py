@@ -190,7 +190,7 @@ def get_book_detail(url):
             pub_yr[0].text) if pub_yr else "--"
 
         book_info["synopsis"] = _try_get_item(
-            soup, "div#description.readable.stacked")
+            soup, "div#description.readable.stacked > span:nth-child(2)")
         book_info["url"] = url
         return book_info
     else:
