@@ -2,7 +2,9 @@
 {% block title %}{% endblock %}
 {% block nav %}
 <nav class="navbar navbar-expand-lg navbar navbar-dark bg-dark">
-  <a class="navbar-brand" href="/home">Navbar</a>
+  <a class="navbar-brand" href="/home">
+    <img src="/static/img/logo.png" width="30" height="30" alt="">
+  </a>
   <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNavAltMarkup"
     aria-controls="navbarNavAltMarkup" aria-expanded="false" aria-label="Toggle navigation">
     <span class="navbar-toggler-icon"></span>
@@ -11,7 +13,8 @@
     <div class="navbar-nav">
       <a class="nav-item nav-link" href="/home">Home</a>
       <a class="nav-item nav-link" href="/status">Task Status</a>
-      <a class="nav-item nav-link" href="/logout">Logout</a> <span class="navbar-text">[{{name}}]</span>
+      <a class="nav-item nav-link float-right" href="/logout">Logout</a> 
+      <span class="ml-4 navbar-text">(Logged in as {{name}})</span>
     </div>
   </div>
 </nav>

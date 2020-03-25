@@ -177,6 +177,7 @@ def get_file(file_path):
         if abs_path.endswith("task.log"):
             with open(abs_path, "r") as logs_file:
                 return render_template('show_logs.html',
+                                       name=escape(session['login_id']),
                                        data=escape(logs_file.read()))
         else:
             return send_file(abs_path, as_attachment=True)
