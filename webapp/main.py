@@ -91,8 +91,8 @@ def start():
     cmd_args.append(gr_password if data_src == "goodreads" else "none")
     cmd_args.append(" > {0}/task.log".format(out_dir))
 
-    mydir = "/Users/auser/work/books_scraper/books_scraper"
-    cmd = "python {0}/run_scraper.py {1}".format(mydir, " ".join(cmd_args))
+    mydir = os.getcwd()
+    cmd = "python {0}/books_scraper/run_scraper.py {1}".format(mydir, " ".join(cmd_args))
     print("Starting command: "+cmd)
     Popen([cmd], shell=True, stdin=None,
           stdout=None, stderr=None, close_fds=True)
