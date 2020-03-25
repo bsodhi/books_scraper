@@ -53,65 +53,13 @@ def debug(msg):
         log(msg)
 
 
-def start_selenium(web_browser, html_dir, genre_list, pps, overwrite="merge"):
-    gr_user = input("Goodreads login ID (an email address): ")
-    gr_pass = getpass(prompt="Password: ")
-    log("Starting webdriver...")
-    if "chrome" == web_browser:
-        browser = webdriver.Chrome()
-    elif "firefox" == web_browser:
-        from selenium.webdriver.firefox.options import Options
-        opt = Options()
-        opt.headless = True
-        browser = webdriver.Firefox(options=opt)
-    elif "safari" == web_browser:
-        browser = webdriver.Safari()
-    elif "edge" == web_browser:
-        browser = webdriver.Edge()
-    else:
-        raise Exception("Unsupported browser: "+web_browser)
-    login_url = "https://www.goodreads.com/user/sign_in"
-    browser.get(login_url)
-    log("Loaded login page.")
-    username = browser.find_element_by_id("user_email")
-    password = browser.find_element_by_id("user_password")
-    username.send_keys(gr_user)
-    password.send_keys(gr_pass)
+def overwrite_existing_path(path_str, options=None):
+    fo = "yes"
+    if os.path.exists(path_str):
+        fo = input(
+            "Path {0} already exists. Would you like to overwrite it? {1}: ".format(path_str, options if options else "[yes/no]"))
 
-    # username.send_keys("wenox85809@hxqmail.com")
-    # password.send_keys("chamanLAL")
-    browser.find_element_by_name("sign_in").submit()
-    log("Sent login request to website.")
-    delay = 5  # seconds
-    try:
-        myElem = WebDriverWait(browser, delay).until(
-            EC.presence_of_element_located((By.CLASS_NAME, 'siteHeader__personal')))
-        log("Loaded the user home page.")
-        print(browser.title)
-    except Exception:
-        log("Failed to login.")
-        raise
-
-    if "Recent updates" in browser.title:
-        shelf_url = "https://www.goodreads.com/shelf/show/{0}?page={1}"
-        for gn in genre_list.split(","):
-            for p in range(1, int(pps) + 1):
-                out_file = "{0}/{1}_p{2}.html".format(html_dir, gn, p)
-                url = shelf_url.format(gn, p)
-                if overwrite == "merge" and os.path.exists(out_file):
-                    log("Page {0} already downloaded. Skipping to next.".format(url))
-                    continue
-                time.sleep(2)
-                log("Fetching ["+url+"]")
-                browser.get(url)
-                html_source = browser.page_source
-                with open(out_file, "w") as html:
-                    html.write(html_source)
-                    log("Saved HTML at: "+html.name)
-        log("Closing the browser")
-        browser.close()
-    else:
-        raise Exception("Failed to load the landing page.")
+    return fo
 
 
 def make_http_request(url):
@@ -136,196 +84,251 @@ def make_file_soup(html_file):
         return BeautifulSoup(fp, 'lxml')
 
 
-def _get_pub_date(dt_str):
-    pub_dt = '--'
-    try:
-        s = dt_str.strip()
-        pub_dt = s[s.find("Published")+9:s.find("by")].strip()
-    except AttributeError:
-        log("\t**** Could not find publish date.")
-    return pub_dt
+class BookScraper(object):
+    def __init__(self, web_browser, max_recs, query, html_dir=None, overwrite="merge", gr_login=None, gr_password=None, out_dir = "output"):
+        self.web_browser = web_browser
+        self.max_recs = int(max_recs)
+        self.query = query
+        self.html_dir = html_dir
+        Path(self.html_dir).mkdir(parents=True, exist_ok=True)
+        self.overwrite = overwrite
+        self.gr_login = gr_login
+        self.gr_password = gr_password
+        self.out_dir = out_dir
+        Path(self.out_dir).mkdir(parents=True, exist_ok=True)
 
+    def _init_selinium(self):
+        if not self.gr_login:
+            self.gr_login = input("Goodreads login ID (an email address): ")
+            self.gr_password = getpass(prompt="Password: ")
+        log("Starting webdriver...")
+        if "chrome" == self.web_browser:
+            self.browser = webdriver.Chrome()
+        elif "firefox" == self.web_browser:
+            from selenium.webdriver.firefox.options import Options
+            opt = Options()
+            opt.headless = True
+            self.browser = webdriver.Firefox(options=opt)
+        elif "safari" == self.web_browser:
+            self.browser = webdriver.Safari()
+        elif "edge" == self.web_browser:
+            self.browser = webdriver.Edge()
+        else:
+            raise Exception("Unsupported browser: "+self.web_browser)
 
-def _try_get_item(soup, sel):
-    val = "--"
-    try:
-        val = soup.select(sel)[0].text.strip()
-    except Exception:
-        log("**** Failed to get value for "+sel)
-    return val
-
-
-def get_book_detail(url):
-    book_info = {"book_format": "--", "pages": "--", "synopsis": "--",
-                 "isbn": "--", "language": "--", "pub_year": "--",
-                 "url": url, "avg_rating": "--", "ratings": "--",
-                 "reviews": "--", "author": "--", "title": "--"}
-    soup = make_page_soup("https://www.goodreads.com"+url)
-
-    if not soup:
-        return book_info
-
-    book_info["avg_rating"] = _try_get_item(
-        soup, "#bookMeta > span:nth-child(2)")
-    book_info["ratings"] = _try_get_item(soup, "a.gr-hyperlink:nth-child(7)")
-    book_info["reviews"] = _try_get_item(soup, "a.gr-hyperlink:nth-child(9)")
-    book_info["author"] = _try_get_item(
-        soup, "#bookAuthors > span:nth-child(2)")
-    book_info["title"] = _try_get_item(soup, "#bookTitle")
-
-    dn = soup.find("div", {"id": "details", "class": "uitext darkGreyText"})
-    if dn:
-        # dn = soup.find("div#details.uitext.darkGreyText")
-        temp = dn.find("span", {"itemprop": "bookFormat"})
-        book_info["book_format"] = temp.text.strip() if temp else "--"
-        temp = dn.find("span", {"itemprop": "numberOfPages"})
-        book_info["pages"] = temp.text.strip() if temp else "--"
-
-        isbns = dn.select("div.clearFloats:nth-child(2) > div:nth-child(1)")
-        isbn = "--"
+    def _crawl_goodreads(self):
+        self._init_selinium()
+        login_url = "https://www.goodreads.com/user/sign_in"
+        self.browser.get(login_url)
+        log("Loaded login page.")
+        username = self.browser.find_element_by_id("user_email")
+        password = self.browser.find_element_by_id("user_password")
+        username.send_keys(self.gr_login)
+        password.send_keys(self.gr_password)
+        self.browser.find_element_by_name("sign_in").submit()
+        log("Sent login request to website.")
+        delay = 5  # seconds
         try:
-            if isbns and isbns[0].text == "ISBN":
-                isbn = dn.select(
-                    "div.clearFloats:nth-child(2) > div:nth-child(2)")[0].text
-        except AttributeError:
-            log("\t**** Could not find ISBN.")
-        book_info["isbn"] = isbn.strip()
+            WebDriverWait(self.browser, delay).until(
+                EC.presence_of_element_located((By.CLASS_NAME, 'siteHeader__personal')))
+            log("Loaded the user home page.")
+        except Exception:
+            log("Failed to login.")
+            raise
 
-        temp = dn.find("div", {"itemprop": "inLanguage"})
-        book_info["language"] = temp.text.strip() if temp else "--"
-
-        pub_yr = soup.select("div.row:nth-child(2)")
-        book_info["pub_year"] = _get_pub_date(
-            pub_yr[0].text) if pub_yr else "--"
-
-        book_info["synopsis"] = _try_get_item(
-            soup, "div#description.readable.stacked > span:nth-child(2)")
-        book_info["url"] = url
-        return book_info
-    else:
-        return book_info
-
-
-def extract_data(genre, writer, soup, books_count):
-    sel = ".mainContent .leftContainer .elementList"
-    for n in soup.select(sel):
-        try:
-            book = {}
-            book["genre"] = genre
-            book_url = n.find("a", {"class": "bookTitle"})["href"]
-            book.update(get_book_detail(book_url))
-            writer.writerow(book)
-            books_count.val += 1
-            print("Processed {0} books.".format(books_count.val))
-        except Exception as ex:
-            msg = str(ex)
-            log("Error in getting book info: "+msg+". Continuing.")
-            if DEBUG:
-                traceback.print_exc()
-            if "ConnectionResetError" in msg:
-                log("Waiting for 15s before attempting next request.")
-                time.sleep(15)
-
-
-def crawl(html_dir, out_dir):
-    bc = Obj()
-    try:
-        out_file = "{0}/goodreads.csv".format(out_dir)
-        with open(out_file, "w", newline='') as csvfile:
-            dw = csv.DictWriter(csvfile, ROW_KEYS, extrasaction='ignore')
-            dw.writeheader()
-            htmls = glob.glob("{0}/*.html".format(html_dir))
-            for h in htmls:
-                log("Extracting data from {0}".format(h))
-                gnr = h.split("/")[-1].split("_")[0]
-                extract_data(gnr, dw, make_file_soup(h), books_count=bc)
-                csvfile.flush()
-
-    except Exception as ex:
-        log("Error occurred when crawing: "+str(ex))
-        traceback.print_exc()
-    except KeyboardInterrupt:
-        log("Exiting on user request (pressed Ctrl+C)")
-    log("Total books = "+str(bc.val))
-
-
-def overwrite_existing_path(path_str, options=None):
-    fo = "yes"
-    if os.path.exists(path_str):
-        fo = input(
-            "Path {0} already exists. Would you like to overwrite it? {1}: ".format(path_str, options if options else "[yes/no]"))
-
-    return fo
-
-
-def extract_gs_data(html):
-    soup = BeautifulSoup(html, "lxml")
-    items = soup.select("#gs_res_ccl_mid > div.gs_r.gs_or.gs_scl")
-
-    data = []
-    for obj in items:
-        title = _try_get_item(obj, "h3")
-        temp = _try_get_item(obj, "div.gs_ri > div.gs_a")
-        authors = temp[:temp.index("-")]
-        pub = temp[temp.index("-")+1:]
-        abst = _try_get_item(obj, "div.gs_ri > div.gs_rs")
-        cited_by = _try_get_item(obj,
-                                 "div.gs_ri > div.gs_fl > a:nth-child(3)").replace("Cited by ", "")
-        url = obj.select_one("div.gs_ggs.gs_fl > div > div > a")
-        url = url["href"] if url else "--"
-        data.append({"title": title, "author": authors, "publication": pub,
-                     "citedby": cited_by, "url": url, "abstract": abst})
-    return data
-
-
-def start_selenium_gs(web_browser, query_str, out_dir, max_records=100):
-    log("Starting webdriver...")
-    if "chrome" == web_browser:
-        browser = webdriver.Chrome()
-    elif "firefox" == web_browser:
-        from selenium.webdriver.firefox.options import Options
-        opt = Options()
-        opt.headless = True
-        browser = webdriver.Firefox(options=opt)
-    elif "safari" == web_browser:
-        browser = webdriver.Safari()
-    elif "edge" == web_browser:
-        browser = webdriver.Edge()
-    else:
-        raise Exception("Unsupported browser: "+web_browser)
-    try:
-        for q in query_str.split(","):
-            csv_path = out_dir + "/" + q.strip().replace(" ", "_")+"_gs.csv"
-            with open(csv_path, "w", newline='') as csvfile:
-                dw = csv.DictWriter(csvfile, GS_ROW_KEYS,
-                                    extrasaction='ignore')
-                dw.writeheader()
-                pg_url = "https://scholar.google.com"
-                browser.get(pg_url)
-                log("Loaded Google Scholar page.")
-                query = browser.find_element_by_id("gs_hdr_tsi")
-                query.send_keys(q)
-                browser.find_element_by_id("gs_hdr_tsb").click()
-                log("Sent search query to website.")
-                has_next = True
-                rec_count = 0
-                while has_next and rec_count < max_records:
+        if "Recent updates" in self.browser.title:
+            shelf_url = "https://www.goodreads.com/shelf/show/{0}?page={1}"
+            for gn in self.query.split(","):
+                for p in range(1, int(self.max_recs) + 1):
+                    html_file = "{0}/{1}_p{2}.html".format(self.html_dir, gn, p)
+                    url = shelf_url.format(gn, p)
+                    if self.overwrite == "merge" and os.path.exists(html_file):
+                        log("Page {0} already downloaded. Skipping to next.".format(
+                            url))
+                        continue
                     time.sleep(2)
-                    html_source = browser.page_source
-                    data = extract_gs_data(html_source)
-                    rec_count += len(data)
-                    nb = browser.find_element_by_link_text("Next")
-                    if nb:
-                        log("Going to next page...")
-                        nb.click()
-                    else:
-                        has_next = False
-                    dw.writerows(data)
+                    log("Fetching ["+url+"]")
+                    self.browser.get(url)
+                    html_source = self.browser.page_source
+                    with open(html_file, "w") as html:
+                        html.write(html_source)
+                        log("Saved HTML at: "+html.name)
+            log("Closing the browser")
+            self.browser.close()
+        else:
+            raise Exception("Failed to load the landing page.")
+
+    def _get_pub_date(self, dt_str):
+        pub_dt = '--'
+        try:
+            s = dt_str.strip()
+            pub_dt = s[s.find("Published")+9:s.find("by")].strip()
+        except AttributeError:
+            log("\t**** Could not find publish date.")
+        return pub_dt
+
+    def _try_get_item(self, soup, sel):
+        val = "--"
+        try:
+            val = soup.select(sel)[0].text.strip()
+        except Exception:
+            log("**** Failed to get value for "+sel)
+        return val
+
+    def _get_book_detail(self, url):
+        book_info = {"book_format": "--", "pages": "--", "synopsis": "--",
+                     "isbn": "--", "language": "--", "pub_year": "--",
+                     "url": url, "avg_rating": "--", "ratings": "--",
+                     "reviews": "--", "author": "--", "title": "--"}
+        soup = make_page_soup("https://www.goodreads.com"+url)
+
+        if not soup:
+            return book_info
+
+        book_info["avg_rating"] = self._try_get_item(
+            soup, "#bookMeta > span:nth-child(2)")
+        book_info["ratings"] = self._try_get_item(
+            soup, "a.gr-hyperlink:nth-child(7)")
+        book_info["reviews"] = self._try_get_item(
+            soup, "a.gr-hyperlink:nth-child(9)")
+        book_info["author"] = self._try_get_item(
+            soup, "#bookAuthors > span:nth-child(2)")
+        book_info["title"] = self._try_get_item(soup, "#bookTitle")
+
+        dn = soup.find(
+            "div", {"id": "details", "class": "uitext darkGreyText"})
+        if dn:
+            # dn = soup.find("div#details.uitext.darkGreyText")
+            temp = dn.find("span", {"itemprop": "bookFormat"})
+            book_info["book_format"] = temp.text.strip() if temp else "--"
+            temp = dn.find("span", {"itemprop": "numberOfPages"})
+            book_info["pages"] = temp.text.strip() if temp else "--"
+
+            isbns = dn.select(
+                "div.clearFloats:nth-child(2) > div:nth-child(1)")
+            isbn = "--"
+            try:
+                if isbns and isbns[0].text == "ISBN":
+                    isbn = dn.select(
+                        "div.clearFloats:nth-child(2) > div:nth-child(2)")[0].text
+            except AttributeError:
+                log("\t**** Could not find ISBN.")
+            book_info["isbn"] = isbn.strip()
+
+            temp = dn.find("div", {"itemprop": "inLanguage"})
+            book_info["language"] = temp.text.strip() if temp else "--"
+
+            pub_yr = soup.select("div.row:nth-child(2)")
+            book_info["pub_year"] = self._get_pub_date(
+                pub_yr[0].text) if pub_yr else "--"
+
+            book_info["synopsis"] = self._try_get_item(
+                soup, "div#description.readable.stacked > span:nth-child(2)")
+            book_info["url"] = url
+            return book_info
+        else:
+            return book_info
+
+    def _extract_data(self, genre, writer, soup, books_count):
+        sel = ".mainContent .leftContainer .elementList"
+        for n in soup.select(sel):
+            try:
+                book = {}
+                book["genre"] = genre
+                book_url = n.find("a", {"class": "bookTitle"})["href"]
+                book.update(self._get_book_detail(book_url))
+                writer.writerow(book)
+                books_count.val += 1
+                log("Processed {0} books.".format(books_count.val))
+            except Exception as ex:
+                msg = str(ex)
+                log("Error in getting book info: "+msg+". Continuing.")
+                if DEBUG:
+                    traceback.print_exc()
+                if "ConnectionResetError" in msg:
+                    log("Waiting for 15s before attempting next request.")
+                    time.sleep(15)
+
+    def scrape_goodreads_books(self):
+        bc = Obj()
+        try:
+            self._crawl_goodreads()
+            out_file = "{0}/goodreads.csv".format(self.out_dir)
+            with open(out_file, "w", newline='') as csvfile:
+                dw = csv.DictWriter(csvfile, ROW_KEYS, extrasaction='ignore')
+                dw.writeheader()
+                csvfile.flush()
+                htmls = glob.glob("{0}/*.html".format(self.html_dir))
+                for h in htmls:
+                    log("Extracting data from {0}".format(h))
+                    gnr = h.split("/")[-1].split("_")[0]
+                    self._extract_data(
+                        gnr, dw, make_file_soup(h), books_count=bc)
                     csvfile.flush()
-    except Exception as ex:
-        traceback.print_exc()
-    finally:
-        browser.close()
+
+        except Exception as ex:
+            log("Error occurred when crawing: "+str(ex))
+            traceback.print_exc()
+        except KeyboardInterrupt:
+            log("Exiting on user request (pressed Ctrl+C)")
+        log("Total books = "+str(bc.val))
+
+    def _extract_gs_data(self, html):
+        soup = BeautifulSoup(html, "lxml")
+        items = soup.select("#gs_res_ccl_mid > div.gs_r.gs_or.gs_scl")
+
+        data = []
+        for obj in items:
+            title = self._try_get_item(obj, "h3")
+            temp = self._try_get_item(obj, "div.gs_ri > div.gs_a")
+            authors = temp[:temp.index("-")]
+            pub = temp[temp.index("-")+1:]
+            abst = self._try_get_item(obj, "div.gs_ri > div.gs_rs")
+            cited_by = self._try_get_item(obj,
+                                          "div.gs_ri > div.gs_fl > a:nth-child(3)").replace("Cited by ", "")
+            url = obj.select_one("div.gs_ggs.gs_fl > div > div > a")
+            url = url["href"] if url else "--"
+            data.append({"title": title, "author": authors, "publication": pub,
+                         "citedby": cited_by, "url": url, "abstract": abst})
+        return data
+
+    def screape_google_scholar(self):
+        log("Starting webdriver...")
+        self._init_selinium()
+        try:
+            for q in self.query.split(","):
+                csv_path = self.out_dir + "/" + q.strip().replace(" ", "_")+"_gs.csv"
+                with open(csv_path, "w", newline='') as csvfile:
+                    dw = csv.DictWriter(csvfile, GS_ROW_KEYS,
+                                        extrasaction='ignore')
+                    dw.writeheader()
+                    csvfile.flush()
+                    pg_url = "https://scholar.google.com"
+                    self.browser.get(pg_url)
+                    log("Loaded Google Scholar page.")
+                    query = self.browser.find_element_by_id("gs_hdr_tsi")
+                    query.send_keys(q)
+                    self.browser.find_element_by_id("gs_hdr_tsb").click()
+                    log("Sent search query to website.")
+                    has_next = True
+                    rec_count = 0
+                    while has_next and rec_count < self.max_recs:
+                        time.sleep(2)
+                        html_source = self.browser.page_source
+                        data = self._extract_gs_data(html_source)
+                        rec_count += len(data)
+                        nb = self.browser.find_element_by_link_text("Next")
+                        if nb:
+                            log("Going to next page...")
+                            nb.click()
+                        else:
+                            has_next = False
+                        dw.writerows(data)
+                        csvfile.flush()
+        except Exception as ex:
+            traceback.print_exc()
+        finally:
+            self.browser.close()
 
 
 def main():
@@ -359,7 +362,7 @@ def main():
             DEBUG = True
         if "no" == overwrite_existing_path(args.out_dir):
             log("User declined to overwrite output {0}. Aborting.".format(
-                args.out_file))
+                args.out_dir))
             return
         Path(args.out_dir).mkdir(parents=True, exist_ok=True)
         if "goodreads" == args.data_src:
@@ -373,13 +376,11 @@ def main():
                 return
 
             Path(args.html_dir).mkdir(parents=True, exist_ok=True)
-            # Start the Selenium session
-            start_selenium(args.browser, args.html_dir,
-                           args.genre_list, args.pps, overwrite=oep)
-            crawl(args.html_dir, args.out_dir)
+            scr = BookScraper(args.browser, args.pps, args.genre_list, args.html_dir, overwrite=oep)
+            scr.scrape_goodreads_books()
         else:
-            start_selenium_gs(args.browser, args.query,
-                              args.out_dir, max_records=args.pps)
+            scr = BookScraper(args.browser, args.pps, args.query)
+            scr.screape_google_scholar()
 
     except Exception as ex:
         log("Exiting. Error occurred. "+str(ex))

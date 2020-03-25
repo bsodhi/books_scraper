@@ -1,0 +1,21 @@
+{% extends "secure_base.html" %}
+{% block title %}Tasks Status{% endblock %}
+
+{% block main %}
+<div class="card">
+  <div class="card-header">
+    Tasks status: {{ tree.name }}
+  </div>
+  <div class="card-body">
+    <ul>
+    {%- for item in tree.children recursive %}
+        <li>{{ item.name }}
+        {%- if item.children -%}
+            <ul>{{ loop(item.children) }}</ul>
+        {%- endif %}</li>
+    {%- endfor %}
+    </ul>
+  </div>
+</div>
+
+{% endblock %}

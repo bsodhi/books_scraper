@@ -1,0 +1,25 @@
+{% extends "secure_base.html" %}
+{% block title %}Tasks Status{% endblock %}
+
+{% block main %}
+<div class="card">
+  <div class="card-header">
+    Tasks status
+  </div>
+  <div class="card-body">
+    <ul>
+    {%- for item in data %}
+      <li>
+          {{item["folder"]}} [<a href="/clear/{{item["folder"]}}" onclick="return confirm('Are you sure?')">Delete</a>]
+        <ul>
+          {%- for ff in item["files"] %}
+            <li><a href="{{ item["folder"]+"/"+ff.split("/")[-1] }}">{{ "".join(ff.split("/")[-1:])  }}</a></li>
+          {%- endfor %}
+        </ul>
+      </li>
+    {%- endfor %}
+    </ul>
+  </div>
+</div>
+
+{% endblock %}

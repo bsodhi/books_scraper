@@ -1,0 +1,42 @@
+{% extends "secure_base.html" %}
+{% block title %}HOME{% endblock %}
+{% block main %}
+<div class="card">
+  <div class="card-header">
+    Submit a task
+  </div>
+  <div class="card-body">
+    <form action="/start" method="POST">
+      <div class="form-group">
+        <label>Scrape data from: &nbsp;</label>
+        <div class="form-check form-check-inline">
+          <input class="form-check-input" type="radio" name="data_src" id="inlineRadio1" value="goodreads">
+          <label class="form-check-label" for="inlineRadio1">Goodreads</label>
+        </div>
+        <div class="form-check form-check-inline">
+          <input class="form-check-input" type="radio" name="data_src" id="inlineRadio2" value="scholar">
+          <label class="form-check-label" for="inlineRadio2">Google Scholar</label>
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="maxrec">Max. records:</label>
+        <input type="number" name="max_rec" class="form-control" id="maxrec" aria-describedby="maxrecHelp">
+        <small id="maxrecHelp" class="form-text text-muted">
+          For Goodreads case it is the number of pages per bookshelf.
+          For Google Scholar, it is the maximum number of results to fetch.
+        </small>
+      </div>
+      <div class="form-group">
+        <label for="genres">Genre list or query:</label>
+        <input type="text" name="query" class="form-control" id="genres" aria-describedby="genresHelp">
+        <small id="genresHelp" class="form-text text-muted">
+          For Goodreads case it is the comma-separated list of genre names Example: <span class="text-monospace">Spirituality, Sikhism, Bible</span>.
+          For Google Scholar, it is the comma-separated list of queries. Example: <span class="text-monospace">research Sikhism, research Spirituality</span>
+        </small>
+      </div>
+      <button type="submit" class="btn btn-primary">Submit</button>
+    </form>
+  </div>
+</div>
+
+{% endblock %}
