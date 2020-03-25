@@ -6,3 +6,4 @@ argparse
 beautifulsoup4
 fake_useragent
 selenium
+passlib

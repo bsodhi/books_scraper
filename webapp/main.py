@@ -8,6 +8,7 @@ import string
 import argparse
 import glob
 import shutil
+from passlib.hash import pbkdf2_sha256
 from pathlib import Path
 from getpass import getpass
 from flask.helpers import send_file
@@ -38,16 +39,14 @@ def _init_db():
         pass
 
 
-def _authenticate(login_id, pass_hashed):
+def _authenticate(login_id, plain_pass):
     valid = False
     try:
         with sqlite3.connect('app.db') as conn:
             c = conn.cursor()
             # Create table
-            c.execute('SELECT * FROM users WHERE login_id=? and pass_hashed=?',
-                      (login_id, pass_hashed))
-            if c.fetchone():
-                valid = True
+            c.execute('SELECT pass_hashed FROM users WHERE login_id=?', (login_id,))
+            valid = pbkdf2_sha256.verify(plain_pass, c.fetchone()[0])
     except Exception as ex:
         print("*** Error occurred: "+str(ex))
     return valid
@@ -104,8 +103,9 @@ def start():
 def signup():
     error = None
     if request.method == 'POST':
-        _add_user(request.form['login_id'],
-                  request.form['password'], request.form['full_name'])
+        pw_hashed = pbkdf2_sha256.hash(request.form['password'])
+        _add_user(request.form['login_id'], pw_hashed,
+                  request.form['full_name'])
         return render_template("home.html", name=request.form['full_name'])
 
     # the code below is executed if the request method
