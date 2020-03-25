@@ -217,5 +217,5 @@ if __name__ == "__main__":
     if not gr_login:
         gr_login = input("Goodreads login ID: ")
         gr_password = getpass(prompt="Goodreads password: ")
-    app.run(debug=True)
+    app.run(port=5204)
     _init_db()
