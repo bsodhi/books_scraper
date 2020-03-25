@@ -2,6 +2,8 @@ import sys
 import traceback
 from scraper import *
 
+log("Scraper invoked as: "+ str(sys.argv))
+
 if len(sys.argv) != 8:
     log("Could not process request. Required 8 arguments supplied {0}."
         .format(len(sys.argv)))

@@ -146,6 +146,7 @@ def task_status():
     path = "{0}/{1}".format(os.getcwd(), session['login_id'])
     if os.path.exists(path):
         subfolders = [f.path for f in os.scandir(path) if f.is_dir()]
+        subfolders.sort(reverse=True)
         data = [
             {"folder": d.split("/")[-1],
              "folder_label": _fmt_date_str(d.split("/")[-1]),

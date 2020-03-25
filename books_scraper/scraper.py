@@ -45,7 +45,7 @@ class Obj:
 
 def log(msg):
     ts = DT.now().strftime("%Y-%m-%d@%I:%M:%S%p")
-    print("[{0}] : {1}".format(ts, msg))
+    print("[{0}] : {1}".format(ts, msg), flush=True)
 
 
 def debug(msg):
