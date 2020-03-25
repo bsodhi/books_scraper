@@ -92,7 +92,8 @@ def start():
     cmd_args.append(" > {0}/task.log".format(out_dir))
 
     mydir = os.getcwd()
-    cmd = "python {0}/books_scraper/run_scraper.py {1}".format(mydir, " ".join(cmd_args))
+    cmd = "python {0}/books_scraper/run_scraper.py {1}".format(
+        mydir, " ".join(cmd_args))
     print("Starting command: "+cmd)
     Popen([cmd], shell=True, stdin=None,
           stdout=None, stderr=None, close_fds=True)
@@ -173,7 +174,12 @@ def get_file(file_path):
 
     # Check if path is a file and serve
     if os.path.isfile(abs_path):
-        return send_file(abs_path, as_attachment=abs_path.endswith(".csv"))
+        if abs_path.endswith("task.log"):
+            with open(abs_path, "r") as logs_file:
+                return render_template('show_logs.html',
+                                       data=escape(logs_file.read()))
+        else:
+            return send_file(abs_path, as_attachment=True)
     else:
         return abort(404)
 

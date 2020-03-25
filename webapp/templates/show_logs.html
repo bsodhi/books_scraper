@@ -1,0 +1,20 @@
+{% extends "secure_base.html" %}
+{% block title %}Tasks Status{% endblock %}
+
+{% block main %}
+<div class="card">
+  <div class="card-header">
+    Tasks logs
+  </div>
+  <div class="card-body">
+    {% if not data %}
+    <p>No logs available.</p>
+    {% else %}
+    <pre>
+      {{data}}
+    </pre>
+    {% endif %}
+  </div>
+</div>
+
+{% endblock %}
