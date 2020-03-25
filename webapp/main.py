@@ -135,16 +135,14 @@ def task_status():
         return redirect(url_for('login'))
 
     path = "{0}/{1}".format(os.getcwd(), session['login_id'])
-    subfolders = [f.path for f in os.scandir(path) if f.is_dir()]
-    data = [
-        {"folder": d.split("/")[-1],
-         "files": [f.path for f in os.scandir(d) if f.is_file()]
-         } for d in subfolders]
-
-    # files = glob.glob("{0}/**/*.csv".format(path))
-    # files.extend(glob.glob("{0}/**/*.log".format(path)))
-    # files = [x[len(path)+1:] for x in files]
-    # files.sort(reverse=True)
+    if os.path.exists(path):
+        subfolders = [f.path for f in os.scandir(path) if f.is_dir()]
+        data = [
+            {"folder": d.split("/")[-1],
+            "files": [f.path for f in os.scandir(d) if f.is_file()]
+            } for d in subfolders]
+    else:
+        data = []
 
     return render_template('status.html',
                            data=data,
