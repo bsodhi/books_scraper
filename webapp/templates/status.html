@@ -7,10 +7,21 @@
     Tasks status
   </div>
   <div class="card-body">
-    <ul>
+    {% if not data %}
+    <p>No results available.</p>
+    {% else %}
+    <p>
+      Contents of the task output folders is listed below. 
+      You can view or download the files by clicking on respective links.</p>
+    <p>
+      Please check the <span class="font-weight-bold text-monospace">task.log</span> file in
+      respective folder to see the status of a submitted task.
+    </p>
+    {% endif %}
+    <ul class="list-group">
     {%- for item in data %}
-      <li>
-          {{item["folder"]}} [<a href="/clear/{{item["folder"]}}" onclick="return confirm('Are you sure?')">Delete</a>]
+      <li class="list-group-item">
+          {{item["folder_label"]}} <a class="ml-4 btn btn-sm btn-danger" href="/clear/{{item["folder"]}}" onclick="return confirm('Are you sure?')">Delete</a>
         <ul>
           {%- for ff in item["files"] %}
             <li><a href="{{ item["folder"]+"/"+ff.split("/")[-1] }}">{{ "".join(ff.split("/")[-1:])  }}</a></li>

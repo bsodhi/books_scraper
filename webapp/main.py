@@ -128,6 +128,15 @@ def login():
     return render_template('index.html', error=error)
 
 
+def _fmt_date_str(dt_str):
+    try:
+        d2 = DT.strptime(dt_str, "%Y%m%d_%H%M%S")
+        return d2.strftime("%Y-%b-%d@%H:%M:%S")
+    except Exception as ex:
+        print("*** Failed to format date: "+str(ex))
+        return dt_str
+
+
 @app.route('/status')
 def task_status():
     if "login_id" not in session:
@@ -139,8 +148,9 @@ def task_status():
         subfolders = [f.path for f in os.scandir(path) if f.is_dir()]
         data = [
             {"folder": d.split("/")[-1],
-            "files": [f.path for f in os.scandir(d) if f.is_file()]
-            } for d in subfolders]
+             "folder_label": _fmt_date_str(d.split("/")[-1]),
+             "files": [f.path for f in os.scandir(d) if f.is_file()]
+             } for d in subfolders]
     else:
         data = []
 
@@ -215,5 +225,5 @@ if __name__ == "__main__":
     if not gr_login:
         gr_login = input("Goodreads login ID: ")
         gr_password = getpass(prompt="Goodreads password: ")
-    app.run(port=5204)
+    app.run(host="0.0.0.0", port=5500)
     _init_db()
