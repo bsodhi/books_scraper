@@ -93,8 +93,8 @@ def start():
     cmd_args.append(html_dir if html_dir else "none")
     cmd_args.append(out_dir)
     cmd_args.append(not dont_ucb)
-    cmd_args.append(gr_login if data_src == "goodreads" else "none")
-    cmd_args.append(gr_password if data_src == "goodreads" else "none")
+    cmd_args.append(gr_login)
+    cmd_args.append(gr_password)
     cmd_args.append(" > {0}/task.log".format(out_dir))
 
     mydir = os.getcwd()
