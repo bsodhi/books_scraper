@@ -277,6 +277,10 @@ if __name__ == "__main__":
                         help="Goodreads login ID")
     parser.add_argument("password", type=str,
                         help="Goodreads password.")
+    parser.add_argument("ssl_cert", type=str,
+                        help="SSL certificate pem file path.")
+    parser.add_argument("ssl_key", type=str,
+                        help="SSL key pem file path.")
     args = parser.parse_args()
     gr_login = args.login
     gr_password = args.password
@@ -286,6 +290,5 @@ if __name__ == "__main__":
     #         ssl_context='adhoc', debug=args.debug)
     app.run(host=args.host,
             port=args.port,
-            ssl_context=("/Users/auser/temp/scraper_cert.pem",
-                         "/Users/auser/temp/scraper_key.pem"),
+            ssl_context=(args.ssl_cert, args.ssl_key),
             debug=args.debug)
