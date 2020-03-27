@@ -70,26 +70,16 @@ def make_http_request(url):
                         timeout=HTTP_TIMEOUT_SEC)
 
 
-def make_page_soup(page_url):
-    page = make_http_request(page_url)
-    if page.status_code == requests.codes.ok:
-        return BeautifulSoup(page.content, 'lxml')
-    else:
-        log("Failed to get page at URL {0}. Error: {1}".format(
-            page_url, page.reason))
-
-
-def make_file_soup(html_file):
-    with open(html_file) as fp:
-        return BeautifulSoup(fp, 'lxml')
-
-
 class BookScraper(object):
-    def __init__(self, web_browser, max_recs, query, html_dir=None, overwrite="merge", gr_login=None, gr_password=None, out_dir = "output"):
+    def __init__(self, web_browser, max_recs, query, html_dir=None,
+                 use_cached_books=True,
+                 overwrite="merge", gr_login=None,
+                 gr_password=None, out_dir="output"):
         self.web_browser = web_browser
         self.max_recs = int(max_recs)
         self.query = query
         self.html_dir = html_dir
+        self.use_cached_books = use_cached_books
         Path(self.html_dir).mkdir(parents=True, exist_ok=True)
         self.overwrite = overwrite
         self.gr_login = gr_login
@@ -117,6 +107,7 @@ class BookScraper(object):
             raise Exception("Unsupported browser: "+self.web_browser)
 
     def _crawl_goodreads(self):
+        crawled_files = []
         self._init_selinium()
         login_url = "https://www.goodreads.com/user/sign_in"
         self.browser.get(login_url)
@@ -140,23 +131,40 @@ class BookScraper(object):
             shelf_url = "https://www.goodreads.com/shelf/show/{0}?page={1}"
             for gn in self.query.split(","):
                 for p in range(1, int(self.max_recs) + 1):
-                    html_file = "{0}/{1}_p{2}.html".format(self.html_dir, gn, p)
+                    html_file = "shelf_{0}_p{1}.html".format(gn, p)
+                    crawled_files.append(html_file)
                     url = shelf_url.format(gn, p)
-                    if self.overwrite == "merge" and os.path.exists(html_file):
+                    if self.use_cached_books and self._is_cached(html_file):
                         log("Page {0} already downloaded. Skipping to next.".format(
                             url))
                         continue
+
                     time.sleep(2)
                     log("Fetching ["+url+"]")
                     self.browser.get(url)
                     html_source = self.browser.page_source
-                    with open(html_file, "w") as html:
-                        html.write(html_source)
-                        log("Saved HTML at: "+html.name)
+                    self._cache_page(html_file, html_source)
+
             log("Closing the browser")
             self.browser.close()
         else:
             raise Exception("Failed to load the landing page.")
+        return crawled_files
+
+    def _is_cached(self, file_name):
+        file_path = "{0}/{1}".format(self.html_dir, file_name)
+        return os.path.exists(file_path)
+
+    def _cache_page(self, file_name, page_content):
+        file_path = "{0}/{1}".format(self.html_dir, file_name)
+        with open(file_path, "w") as html:
+            html.write(page_content)
+            log("Saved HTML at: "+file_path)
+
+    def _get_cache_page(self, file_name):
+        file_path = "{0}/{1}".format(self.html_dir, file_name)
+        with open(file_path, "r") as html:
+            return html.read()
 
     def _get_pub_date(self, dt_str):
         pub_dt = '--'
@@ -180,7 +188,24 @@ class BookScraper(object):
                      "isbn": "--", "language": "--", "pub_year": "--",
                      "url": url, "avg_rating": "--", "ratings": "--",
                      "reviews": "--", "author": "--", "title": "--"}
-        soup = make_page_soup("https://www.goodreads.com"+url)
+
+        # https://www.goodreads.com/book/show/6708.The_Power_of_Now
+        soup = None
+
+        file_name = "".join(url.split("/"))+".html"
+        if self.use_cached_books and self._is_cached(file_name):
+            log("Using cached file "+file_name)
+            html = self._get_cache_page(file_name)
+            soup = BeautifulSoup(html, "lxml")
+        else:
+            page_url = "https://www.goodreads.com"+url
+            page = make_http_request(page_url)
+            if page.status_code == requests.codes.ok:
+                self._cache_page(file_name, str(page.content, encoding="utf8"))
+                soup = BeautifulSoup(page.content, 'lxml')
+            else:
+                log("Failed to get page at URL {0}. Error: {1}".format(
+                    page_url, page.reason))
 
         if not soup:
             return book_info
@@ -252,18 +277,28 @@ class BookScraper(object):
     def scrape_goodreads_books(self):
         bc = Obj()
         try:
-            self._crawl_goodreads()
-            out_file = "{0}/goodreads.csv".format(self.out_dir)
+            crawled_files = self._crawl_goodreads()
+            fn = "_".join(self.query.strip().split(","))\
+                .replace(" ", "_")+"_GOODREADS.csv"
+            out_file = "{0}/{1}".format(self.out_dir, fn)
             with open(out_file, "w", newline='') as csvfile:
                 dw = csv.DictWriter(csvfile, ROW_KEYS, extrasaction='ignore')
                 dw.writeheader()
                 csvfile.flush()
-                htmls = glob.glob("{0}/*.html".format(self.html_dir))
+                htmls = []
+                for file_name in crawled_files:
+                    # File name is like: "shelf_{0}_p{1}.html"
+                    htmls.extend(
+                        glob.glob("{0}/{1}".format(self.html_dir, file_name)))
+
                 for h in htmls:
                     log("Extracting data from {0}".format(h))
-                    gnr = h.split("/")[-1].split("_")[0]
-                    self._extract_data(
-                        gnr, dw, make_file_soup(h), books_count=bc)
+                    # "/parent/path/shelf_{1}_p{2}.html"
+                    gnr = h.split("/")[-1].split("_")[1]
+                    with open(h, 'r') as fp:
+                        soup = BeautifulSoup(fp, 'lxml')
+
+                    self._extract_data(gnr, dw, soup, books_count=bc)
                     csvfile.flush()
 
         except Exception as ex:
@@ -376,7 +411,8 @@ def main():
                 return
 
             Path(args.html_dir).mkdir(parents=True, exist_ok=True)
-            scr = BookScraper(args.browser, args.pps, args.genre_list, args.html_dir, overwrite=oep)
+            scr = BookScraper(args.browser, args.pps,
+                              args.genre_list, args.html_dir, overwrite=oep)
             scr.scrape_goodreads_books()
         else:
             scr = BookScraper(args.browser, args.pps, args.query)

@@ -1,5 +1,6 @@
 import sys
 import traceback
+import os
 from scraper import *
 
 log("Scraper invoked as: "+ str(sys.argv[:-1])+ " ****")
@@ -33,3 +34,5 @@ try:
 except Exception as ex:
     log("Error occurred when scraping data: "+str(ex))
     traceback.print_exc()
+finally:
+    os.remove(os.path.join(out_dir, "pid"))
