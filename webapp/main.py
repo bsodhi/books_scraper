@@ -83,6 +83,7 @@ def start():
     data_src = request.form['data_src']
     max_rec = request.form['max_rec']
     query = request.form['query']
+    dont_ucb = request.form.get('dont_ucb') == "on"
     html_dir = "{0}/html/".format(os.getcwd())
 
     cmd_args = []
@@ -91,13 +92,14 @@ def start():
     cmd_args.append("\""+query+"\"")
     cmd_args.append(html_dir if html_dir else "none")
     cmd_args.append(out_dir)
+    cmd_args.append(not dont_ucb)
     cmd_args.append(gr_login if data_src == "goodreads" else "none")
     cmd_args.append(gr_password if data_src == "goodreads" else "none")
     cmd_args.append(" > {0}/task.log".format(out_dir))
 
     mydir = os.getcwd()
     cmd = "python {0}/books_scraper/run_scraper.py {1}".format(
-        mydir, " ".join(cmd_args))
+        mydir, " ".join(str(x) for x in cmd_args))
     logging.info("Starting command: "+cmd)
     proc = Popen([cmd], shell=True, stdin=None,
                  stdout=None, stderr=None, close_fds=True)
@@ -280,5 +282,10 @@ if __name__ == "__main__":
     gr_password = args.password
     app.secret_key = random_str(size=30)
     _init_db()
-    app.run(host=args.host, port=args.port,
-            ssl_context='adhoc', debug=args.debug)
+    # app.run(host=args.host, port=args.port,
+    #         ssl_context='adhoc', debug=args.debug)
+    app.run(host=args.host,
+            port=args.port,
+            ssl_context=("/Users/auser/temp/scraper_cert.pem",
+                         "/Users/auser/temp/scraper_key.pem"),
+            debug=args.debug)

@@ -4,6 +4,7 @@ and Python API documentation. Greatly appreciated!
 """
 import os
 import glob
+import math
 import csv
 import re
 import lxml
@@ -72,20 +73,21 @@ def make_http_request(url):
 
 class BookScraper(object):
     def __init__(self, web_browser, max_recs, query, html_dir=None,
-                 use_cached_books=True,
-                 overwrite="merge", gr_login=None,
+                 use_cached_books=True, gr_login=None,
                  gr_password=None, out_dir="output"):
         self.web_browser = web_browser
         self.max_recs = int(max_recs)
         self.query = query
         self.html_dir = html_dir
-        self.use_cached_books = use_cached_books
+        ucb = str(use_cached_books).lower().strip()
+        tv = ["true", "t", "1", "yes", "on", "y"]
+        self.use_cached_books = ucb in tv
         Path(self.html_dir).mkdir(parents=True, exist_ok=True)
-        self.overwrite = overwrite
         self.gr_login = gr_login
         self.gr_password = gr_password
         self.out_dir = out_dir
         Path(self.out_dir).mkdir(parents=True, exist_ok=True)
+        log("Using cached books: "+str(self.use_cached_books))
 
     def _init_selinium(self):
         if not self.gr_login:
@@ -106,7 +108,7 @@ class BookScraper(object):
         else:
             raise Exception("Unsupported browser: "+self.web_browser)
 
-    def _crawl_goodreads(self):
+    def _crawl_goodreads_shelves(self):
         crawled_files = []
         self._init_selinium()
         login_url = "https://www.goodreads.com/user/sign_in"
@@ -118,9 +120,9 @@ class BookScraper(object):
         password.send_keys(self.gr_password)
         self.browser.find_element_by_name("sign_in").submit()
         log("Sent login request to website.")
-        delay = 5  # seconds
+        timeout = 5  # seconds
         try:
-            WebDriverWait(self.browser, delay).until(
+            WebDriverWait(self.browser, timeout).until(
                 EC.presence_of_element_located((By.CLASS_NAME, 'siteHeader__personal')))
             log("Loaded the user home page.")
         except Exception:
@@ -130,7 +132,8 @@ class BookScraper(object):
         if "Recent updates" in self.browser.title:
             shelf_url = "https://www.goodreads.com/shelf/show/{0}?page={1}"
             for gn in self.query.split(","):
-                for p in range(1, int(self.max_recs) + 1):
+                no_of_shelves = math.ceil(int(self.max_recs)/50) + 1
+                for p in range(1, no_of_shelves):
                     html_file = "shelf_{0}_p{1}.html".format(gn, p)
                     crawled_files.append(html_file)
                     url = shelf_url.format(gn, p)
@@ -254,9 +257,11 @@ class BookScraper(object):
         else:
             return book_info
 
-    def _extract_data(self, genre, writer, soup, books_count):
-        sel = ".mainContent .leftContainer .elementList"
-        for n in soup.select(sel):
+    def _extract_books_from_shelf(self, genre, writer, soup, books_count):
+
+        # Selector for book entries on a shelf page
+        book_entry_sel = ".mainContent .leftContainer .elementList"
+        for n in soup.select(book_entry_sel):
             try:
                 book = {}
                 book["genre"] = genre
@@ -277,28 +282,30 @@ class BookScraper(object):
     def scrape_goodreads_books(self):
         bc = Obj()
         try:
-            crawled_files = self._crawl_goodreads()
+            crawled_files = self._crawl_goodreads_shelves()
             fn = "_".join(self.query.strip().split(","))\
                 .replace(" ", "_")+"_GOODREADS.csv"
             out_file = "{0}/{1}".format(self.out_dir, fn)
+
             with open(out_file, "w", newline='') as csvfile:
                 dw = csv.DictWriter(csvfile, ROW_KEYS, extrasaction='ignore')
                 dw.writeheader()
                 csvfile.flush()
-                htmls = []
+                shelf_pages = []
                 for file_name in crawled_files:
                     # File name is like: "shelf_{0}_p{1}.html"
-                    htmls.extend(
+                    shelf_pages.extend(
                         glob.glob("{0}/{1}".format(self.html_dir, file_name)))
 
-                for h in htmls:
+                for h in shelf_pages:
                     log("Extracting data from {0}".format(h))
                     # "/parent/path/shelf_{1}_p{2}.html"
                     gnr = h.split("/")[-1].split("_")[1]
                     with open(h, 'r') as fp:
                         soup = BeautifulSoup(fp, 'lxml')
 
-                    self._extract_data(gnr, dw, soup, books_count=bc)
+                    self._extract_books_from_shelf(
+                        gnr, dw, soup, books_count=bc)
                     csvfile.flush()
 
         except Exception as ex:
@@ -331,6 +338,7 @@ class BookScraper(object):
         log("Starting webdriver...")
         self._init_selinium()
         try:
+            timeout = 5  # 5 sec
             for q in self.query.split(","):
                 csv_path = self.out_dir + "/" + q.strip().replace(" ", "_")+"_gs.csv"
                 with open(csv_path, "w", newline='') as csvfile:
@@ -340,24 +348,43 @@ class BookScraper(object):
                     csvfile.flush()
                     pg_url = "https://scholar.google.com"
                     self.browser.get(pg_url)
+                    WebDriverWait(self.browser, timeout).until(
+                        EC.presence_of_element_located((By.ID, 'gs_hdr_tsi')))
                     log("Loaded Google Scholar page.")
                     query = self.browser.find_element_by_id("gs_hdr_tsi")
                     query.send_keys(q)
                     self.browser.find_element_by_id("gs_hdr_tsb").click()
                     log("Sent search query to website.")
+                    WebDriverWait(self.browser, timeout).until(
+                        EC.presence_of_element_located((By.CLASS_NAME, 'gs_ab_mdw')))
                     has_next = True
                     rec_count = 0
                     while has_next and rec_count < self.max_recs:
                         time.sleep(2)
                         html_source = self.browser.page_source
-                        data = self._extract_gs_data(html_source)
-                        rec_count += len(data)
-                        nb = self.browser.find_element_by_link_text("Next")
-                        if nb:
-                            log("Going to next page...")
-                            nb.click()
-                        else:
+                        try:
+                            data = self._extract_gs_data(html_source)
+                            rec_count += len(data)
+                        except Exception as ex:
+                            traceback.print_exc()
+                            log("Error when extracting information from page. "+str(ex))
+
+                        try:
+                            nb = self.browser.find_element_by_link_text("Next")
+                            if nb:
+                                log("Going to next page...")
+                                nb.click()
+                                WebDriverWait(self.browser, timeout). \
+                                    until(EC.presence_of_element_located(
+                                        (By.CLASS_NAME, 'gs_ico_nav_next')))
+
+                            else:
+                                has_next = False
+                        except Exception as ex:
                             has_next = False
+                            traceback.print_exc()
+                            log("Error when paginating to next. "+str(ex))
+
                         dw.writerows(data)
                         csvfile.flush()
         except Exception as ex:
@@ -376,7 +403,7 @@ def main():
         parser.add_argument("browser", type=str, choices=["chrome", "firefox", "safari", "edge"],
                             help="Web browser to use.")
         parser.add_argument("pps", type=int,
-                            help="No. of pages per shelf or Max. records in the Google Scholar query result.")
+                            help="Max. books/articles to fetch.")
         parser.add_argument("-q", "--query", type=str,
                             dest="query", help="""
                             Query string to use for Google Scholar. Multiple queries
