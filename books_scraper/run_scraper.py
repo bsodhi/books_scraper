@@ -5,8 +5,8 @@ from scraper import *
 
 log("Scraper invoked as: "+ str(sys.argv[:-1])+ " ****")
 
-if len(sys.argv) != 9:
-    log("Could not process request. Required 9 arguments supplied {0}."
+if len(sys.argv) != 10:
+    log("Could not process request. Required 10 arguments supplied {0}."
         .format(len(sys.argv)))
     exit(-1)
 
@@ -16,14 +16,16 @@ query = sys.argv[3]
 html_dir = sys.argv[4]
 out_dir = sys.argv[5]
 use_cached_books = sys.argv[6]
-gr_login = sys.argv[7]
-gr_password = sys.argv[8]
+timeout = int(sys.argv[7])
+gr_login = sys.argv[8]
+gr_password = sys.argv[9]
 
 
 log("Starting scraper.")
 bs = BookScraper("firefox", max_recs, query, html_dir=html_dir,
                  gr_login=gr_login, gr_password=gr_password,
-                 out_dir=out_dir, use_cached_books=use_cached_books)
+                 out_dir=out_dir, use_cached_books=use_cached_books,
+                 timeout=timeout)
 try:
     if "goodreads" == data_src:
         bs.scrape_goodreads_books()

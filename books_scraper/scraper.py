@@ -63,18 +63,20 @@ def overwrite_existing_path(path_str, options=None):
     return fo
 
 
-def make_http_request(url):
+def make_http_request(url, timeout=10):
     log("Requesting URL {0}. Delay {1}s".format(url, HTTP_DELAY_SEC))
     time.sleep(HTTP_DELAY_SEC)
     return requests.get(url,
                         headers={'User-Agent': UA.random},
-                        timeout=HTTP_TIMEOUT_SEC)
+                        timeout=timeout)
 
 
 class BookScraper(object):
     def __init__(self, web_browser, max_recs, query, html_dir=None,
                  use_cached_books=True, gr_login=None,
-                 gr_password=None, out_dir="output"):
+                 gr_password=None, out_dir="output",
+                 timeout=10):
+        self.timeout = timeout
         self.web_browser = web_browser
         self.max_recs = int(max_recs)
         self.query = query
@@ -120,9 +122,8 @@ class BookScraper(object):
         password.send_keys(self.gr_password)
         self.browser.find_element_by_name("sign_in").submit()
         log("Sent login request to website.")
-        timeout = 5  # seconds
         try:
-            WebDriverWait(self.browser, timeout).until(
+            WebDriverWait(self.browser, self.timeout).until(
                 EC.presence_of_element_located((By.CLASS_NAME, 'siteHeader__personal')))
             log("Loaded the user home page.")
         except Exception:
@@ -202,7 +203,7 @@ class BookScraper(object):
             soup = BeautifulSoup(html, "lxml")
         else:
             page_url = "https://www.goodreads.com"+url
-            page = make_http_request(page_url)
+            page = make_http_request(page_url, timeout= self.timeout)
             if page.status_code == requests.codes.ok:
                 self._cache_page(file_name, str(page.content, encoding="utf8"))
                 soup = BeautifulSoup(page.content, 'lxml')
@@ -338,7 +339,6 @@ class BookScraper(object):
         log("Starting webdriver...")
         self._init_selinium()
         try:
-            timeout = 5  # 5 sec
             for q in self.query.split(","):
                 csv_path = self.out_dir + "/" + q.strip().replace(" ", "_")+"_gs.csv"
                 with open(csv_path, "w", newline='') as csvfile:
@@ -348,14 +348,14 @@ class BookScraper(object):
                     csvfile.flush()
                     pg_url = "https://scholar.google.com"
                     self.browser.get(pg_url)
-                    WebDriverWait(self.browser, timeout).until(
+                    WebDriverWait(self.browser, self.timeout).until(
                         EC.presence_of_element_located((By.ID, 'gs_hdr_tsi')))
                     log("Loaded Google Scholar page.")
                     query = self.browser.find_element_by_id("gs_hdr_tsi")
                     query.send_keys(q)
                     self.browser.find_element_by_id("gs_hdr_tsb").click()
                     log("Sent search query to website.")
-                    WebDriverWait(self.browser, timeout).until(
+                    WebDriverWait(self.browser, self.timeout).until(
                         EC.presence_of_element_located((By.CLASS_NAME, 'gs_ab_mdw')))
                     has_next = True
                     rec_count = 0
@@ -374,7 +374,7 @@ class BookScraper(object):
                             if nb:
                                 log("Going to next page...")
                                 nb.click()
-                                WebDriverWait(self.browser, timeout). \
+                                WebDriverWait(self.browser, self.timeout). \
                                     until(EC.presence_of_element_located(
                                         (By.CLASS_NAME, 'gs_ico_nav_next')))
 

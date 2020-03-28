@@ -83,6 +83,7 @@ def start():
     data_src = request.form['data_src']
     max_rec = request.form['max_rec']
     query = request.form['query']
+    timeout = request.form['timeout']
     dont_ucb = request.form.get('dont_ucb') == "on"
     html_dir = "{0}/html/".format(os.getcwd())
 
@@ -93,6 +94,7 @@ def start():
     cmd_args.append(html_dir if html_dir else "none")
     cmd_args.append(out_dir)
     cmd_args.append(not dont_ucb)
+    cmd_args.append(timeout)
     cmd_args.append(gr_login)
     cmd_args.append(gr_password)
     cmd_args.append(" > {0}/task.log".format(out_dir))

@@ -41,6 +41,13 @@
         </small>
       </div>
       <div class="form-group">
+        <label for="timeout">HTTP timeout (in s):</label>
+        <input type="number" name="timeout" class="form-control" id="timeout" aria-describedby="timeoutHelp" value="10" required>
+        <small id="timeoutHelp" class="form-text text-muted">
+          HTTP timeout in seconds for scraping requests to Google Scholar and Goodreads. Default is 10s.</span>
+        </small>
+      </div>
+      <div class="form-group">
         <label for="ucb">Do NOT use cached books:
           <input type="checkbox" name="dont_ucb" class="form-control" id="ucb" aria-describedby="ucbHelp">
         </label>
