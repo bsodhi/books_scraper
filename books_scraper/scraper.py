@@ -92,7 +92,8 @@ class BookScraper(object):
         self.scholar_password = scholar_password
         self.out_dir = out_dir
         Path(self.out_dir).mkdir(parents=True, exist_ok=True)
-        log("Using cached books: "+str(self.use_cached_books))
+        log("Using cached books: "+str(self.use_cached_books) +
+            ". Timeout = "+str(self.timeout))
 
     def _init_selinium(self):
         log("Starting webdriver...")
@@ -101,7 +102,7 @@ class BookScraper(object):
         elif "firefox" == self.web_browser:
             from selenium.webdriver.firefox.options import Options
             opt = Options()
-            opt.headless = True
+            opt.headless = False
             self.browser = webdriver.Firefox(options=opt)
         elif "safari" == self.web_browser:
             self.browser = webdriver.Safari()
@@ -109,6 +110,13 @@ class BookScraper(object):
             self.browser = webdriver.Edge()
         else:
             raise Exception("Unsupported browser: "+self.web_browser)
+
+        self.web_wait = WebDriverWait(self.browser, self.timeout)
+
+    def _web_wait(self, by, val):
+        self.web_wait.until(
+            EC.presence_of_element_located((by, val)))
+        time.sleep(random.randrange(3, 10))
 
     def _crawl_goodreads_shelves(self):
         crawled_files = []
@@ -123,8 +131,7 @@ class BookScraper(object):
         self.browser.find_element_by_name("sign_in").submit()
         log("Sent login request to website.")
         try:
-            WebDriverWait(self.browser, self.timeout).until(
-                EC.presence_of_element_located((By.CLASS_NAME, 'siteHeader__personal')))
+            self._web_wait(By.CLASS_NAME, 'siteHeader__personal')
             log("Loaded the user home page.")
         except Exception:
             log("Failed to login.")
@@ -203,7 +210,7 @@ class BookScraper(object):
             soup = BeautifulSoup(html, "lxml")
         else:
             page_url = "https://www.goodreads.com"+url
-            page = make_http_request(page_url, timeout= self.timeout)
+            page = make_http_request(page_url, timeout=self.timeout)
             if page.status_code == requests.codes.ok:
                 self._cache_page(file_name, str(page.content, encoding="utf8"))
                 soup = BeautifulSoup(page.content, 'lxml')
@@ -348,39 +355,45 @@ class BookScraper(object):
                     csvfile.flush()
 
                     # Login to google if credentials provided
-                    if self.scholar_id and self.scholar_password:
-                        log("Logging in to Google Scholar.")
-                        self.browser.get("https://accounts.google.com/Login?hl=en&continue=https://scholar.google.com/")
-                        WebDriverWait(self.browser, self.timeout).until(
-                            EC.presence_of_element_located((By.ID, 'identifierId')))
-                        user_id = self.browser.find_element_by_id("identifierId")
-                        user_id.clear()
-                        user_id.send_keys(self.scholar_id)
-                        user_id.send_keys(Keys.RETURN)
-                        WebDriverWait(self.browser, self.timeout).until(
-                            EC.presence_of_element_located((By.NAME, 'password')))
-                        passw = self.browser.find_element_by_name("password")
-                        passw.send_keys(self.scholar_password)
-                        passw.send_keys(Keys.RETURN)
-                    else:
-                        log("Using Google Scholar without logging in.")
+                    try:
+                        if self.scholar_id and self.scholar_password:
+                            log("Logging in to Google Scholar.")
+                            self.browser.get(
+                                "https://accounts.google.com/Login?hl=en&continue=https://scholar.google.com/")
+                            self._web_wait(By.ID, 'identifierId')
+                            user_id = self.browser.find_element_by_id(
+                                "identifierId")
+                            user_id.clear()
+                            user_id.send_keys(self.scholar_id)
+                            user_id.send_keys(Keys.RETURN)
+                            log("Sent the user ID to server.")
+                            self._web_wait(By.NAME, 'password')
+                            passw = self.browser.find_element_by_name(
+                                "password")
+                            log("Found password input box.")
+                            passw.send_keys(self.scholar_password)
+                            passw.send_keys(Keys.RETURN)
+                            log("Sent the credentials to server.")
+                        else:
+                            log("Using Google Scholar without logging in.")
+                    except Exception as ex:
+                        traceback.print_exc()
+                        log("Will attempt using Google Scholar without logging in.")
 
                     pg_url = "https://scholar.google.com"
                     self.browser.get(pg_url)
-                    WebDriverWait(self.browser, self.timeout).until(
-                        EC.presence_of_element_located((By.ID, 'gs_hdr_tsi')))
+                    self._web_wait(By.ID, 'gs_hdr_tsi')
                     log("Loaded Google Scholar page.")
                     query = self.browser.find_element_by_id("gs_hdr_tsi")
                     query.clear()
                     query.send_keys(q)
                     self.browser.find_element_by_id("gs_hdr_tsb").click()
                     log("Sent search query to website.")
-                    WebDriverWait(self.browser, self.timeout).until(
-                        EC.presence_of_element_located((By.CLASS_NAME, 'gs_ab_mdw')))
+                    self._web_wait(By.CLASS_NAME, 'gs_ab_mdw')
                     has_next = True
                     rec_count = 0
                     while has_next and rec_count < self.max_recs:
-                        time.sleep(random.randrange(2, 8))
+                        time.sleep(random.randrange(5, 10))
                         html_source = self.browser.page_source
                         try:
                             data = self._extract_gs_data(html_source)
@@ -394,14 +407,11 @@ class BookScraper(object):
                             if nb:
                                 log("Going to next page...")
                                 nb.click()
-                                WebDriverWait(self.browser, self.timeout). \
-                                    until(EC.presence_of_element_located(
-                                        (By.CLASS_NAME, 'gs_ico_nav_next')))
-
+                                self._web_wait(
+                                    By.CLASS_NAME, 'gs_ico_nav_next')
                             else:
                                 has_next = False
                         except Exception as ex:
-                            has_next = False
                             traceback.print_exc()
                             log("Error when paginating to next. "+str(ex))
 
