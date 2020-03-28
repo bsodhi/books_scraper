@@ -1,42 +1,68 @@
 import sys
 import traceback
 import os
+import json
+import argparse
 from scraper import *
 
-log("Scraper invoked as: "+ str(sys.argv[:-1])+ " ****")
 
-if len(sys.argv) != 10:
-    log("Could not process request. Required 10 arguments supplied {0}."
-        .format(len(sys.argv)))
-    exit(-1)
+def main(cfg):
+    gr_login = cfg["gr_login"]
+    gr_password = cfg["gr_password"]
+    scholar_id = "{0}@gmail.com".format(cfg["scholar_id"])
+    scholar_password = cfg["scholar_password"]
 
-data_src = sys.argv[1]
-max_recs = sys.argv[2]
-query = sys.argv[3]
-html_dir = sys.argv[4]
-out_dir = sys.argv[5]
-use_cached_books = sys.argv[6]
-timeout = int(sys.argv[7])
-gr_login = sys.argv[8]
-gr_password = sys.argv[9]
+    html_dir = cfg["html_dir"]
+    data_src = cfg["data_src"]
+    max_recs = cfg["max_recs"]
+    query = cfg["query"]
+    out_dir = cfg["out_dir"]
+    use_cached_books = cfg["ucb"]
+    timeout = cfg["timeout"]
+
+    log("Starting scraper.")
+    bs = BookScraper("firefox", max_recs, query, html_dir=html_dir,
+                     gr_login=gr_login, gr_password=gr_password,
+                     out_dir=out_dir, use_cached_books=use_cached_books,
+                     timeout=timeout, scholar_id=scholar_id,
+                     scholar_password=scholar_password)
+    try:
+        if "goodreads" == data_src:
+            bs.scrape_goodreads_books()
+        elif "scholar" == data_src:
+            bs.screape_google_scholar()
+        else:
+            log(" Unsupported data source: "+data_src)
+
+        log("Scraping completed.")
+    except Exception as ex:
+        log("Error occurred when scraping data: "+str(ex))
+        traceback.print_exc()
+    finally:
+        pid_file = os.path.join(out_dir, "pid")
+        if os.path.exists(pid_file):
+            os.remove(pid_file)
 
 
-log("Starting scraper.")
-bs = BookScraper("firefox", max_recs, query, html_dir=html_dir,
-                 gr_login=gr_login, gr_password=gr_password,
-                 out_dir=out_dir, use_cached_books=use_cached_books,
-                 timeout=timeout)
-try:
-    if "goodreads" == data_src:
-        bs.scrape_goodreads_books()
-    elif "scholar" == data_src:
-        bs.screape_google_scholar()
-    else:
-        log(" Unsupported data source: "+data_src)
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("cfg_file", type=str, help="Config file path.")
+    parser.add_argument("timeout", type=int, help="Scraping request timeout.")
+    parser.add_argument("query", type=str, help="Query string.")
+    parser.add_argument("max_recs", type=int,
+                        help="Max. no. of records to fetch.")
+    parser.add_argument("data_src", type=str, choices=["scholar", "goodreads"],
+                        help="Which source of data to work with.")
+    parser.add_argument("out_dir", type=str, help="Output directory path.")
+    parser.add_argument("html_dir", type=str, help="HTML directory path.")
+    parser.add_argument(
+        "ucb", type=bool, help="Use cached books.", default=True)
 
-    log("Scraping completed.")
-except Exception as ex:
-    log("Error occurred when scraping data: "+str(ex))
-    traceback.print_exc()
-finally:
-    os.remove(os.path.join(out_dir, "pid"))
+    args = parser.parse_args()
+    argdict = vars(args)
+    log("Args: "+str(argdict))
+    with open(args.cfg_file, "r") as cfg_file:
+        cfg = json.load(cfg_file)
+        cfg.update(argdict)
+
+    main(cfg)

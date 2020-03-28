@@ -79,24 +79,25 @@ def start():
     login_id = session['login_id']
     out_dir = "{0}/{1}/{2}".format(os.getcwd(), login_id, get_ts_str())
     Path(out_dir).mkdir(parents=True, exist_ok=True)
+    html_dir = "{0}/html/".format(os.getcwd())
+    Path(html_dir).mkdir(parents=True, exist_ok=True)
+
     logging.info("Starting command in: "+os.getcwd())
     data_src = request.form['data_src']
     max_rec = request.form['max_rec']
     query = request.form['query']
     timeout = request.form['timeout']
     dont_ucb = request.form.get('dont_ucb') == "on"
-    html_dir = "{0}/html/".format(os.getcwd())
 
     cmd_args = []
-    cmd_args.append(data_src)
-    cmd_args.append(max_rec)
-    cmd_args.append("\""+query+"\"")
-    cmd_args.append(html_dir if html_dir else "none")
-    cmd_args.append(out_dir)
-    cmd_args.append(not dont_ucb)
+    cmd_args.append(cfg_file_path)
     cmd_args.append(timeout)
-    cmd_args.append(gr_login)
-    cmd_args.append(gr_password)
+    cmd_args.append("\""+query+"\"")
+    cmd_args.append(max_rec)
+    cmd_args.append(data_src)
+    cmd_args.append(out_dir)
+    cmd_args.append(html_dir if html_dir else "none")
+    cmd_args.append(not dont_ucb)
     cmd_args.append(" > {0}/task.log".format(out_dir))
 
     mydir = os.getcwd()
@@ -262,9 +263,7 @@ def logout():
     return redirect(url_for('index'))
 
 
-gr_login = None
-gr_password = None
-
+cfg_file_path = None
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -275,17 +274,14 @@ if __name__ == "__main__":
     parser.add_argument("-d", "--debug", type=bool, nargs='?',
                         const=True, default=False,
                         dest="debug", help="Run the server in debug mode.")
-    parser.add_argument("login", type=str,
-                        help="Goodreads login ID")
-    parser.add_argument("password", type=str,
-                        help="Goodreads password.")
+    parser.add_argument("-c", "--run-config", type=str, default="run_config.json",
+                        dest="cfg_file_path", help="Scrapper runner config file path.")
     parser.add_argument("ssl_cert", type=str,
                         help="SSL certificate pem file path.")
     parser.add_argument("ssl_key", type=str,
                         help="SSL key pem file path.")
     args = parser.parse_args()
-    gr_login = args.login
-    gr_password = args.password
+    cfg_file_path = args.cfg_file_path
     app.secret_key = random_str(size=30)
     _init_db()
     # app.run(host=args.host, port=args.port,

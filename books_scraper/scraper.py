@@ -23,6 +23,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 from getpass import getpass
+from selenium.webdriver.common.keys import Keys
 
 # Disable the SSL warnings
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -74,8 +75,8 @@ def make_http_request(url, timeout=10):
 class BookScraper(object):
     def __init__(self, web_browser, max_recs, query, html_dir=None,
                  use_cached_books=True, gr_login=None,
-                 gr_password=None, out_dir="output",
-                 timeout=10):
+                 gr_password=None, out_dir="output", timeout=10,
+                 scholar_id=None, scholar_password=None):
         self.timeout = timeout
         self.web_browser = web_browser
         self.max_recs = int(max_recs)
@@ -87,14 +88,13 @@ class BookScraper(object):
         Path(self.html_dir).mkdir(parents=True, exist_ok=True)
         self.gr_login = gr_login
         self.gr_password = gr_password
+        self.scholar_id = scholar_id
+        self.scholar_password = scholar_password
         self.out_dir = out_dir
         Path(self.out_dir).mkdir(parents=True, exist_ok=True)
         log("Using cached books: "+str(self.use_cached_books))
 
     def _init_selinium(self):
-        if not self.gr_login:
-            self.gr_login = input("Goodreads login ID (an email address): ")
-            self.gr_password = getpass(prompt="Password: ")
         log("Starting webdriver...")
         if "chrome" == self.web_browser:
             self.browser = webdriver.Chrome()
@@ -346,12 +346,32 @@ class BookScraper(object):
                                         extrasaction='ignore')
                     dw.writeheader()
                     csvfile.flush()
+
+                    # Login to google if credentials provided
+                    if self.scholar_id and self.scholar_password:
+                        log("Logging in to Google Scholar.")
+                        self.browser.get("https://accounts.google.com/Login?hl=en&continue=https://scholar.google.com/")
+                        WebDriverWait(self.browser, self.timeout).until(
+                            EC.presence_of_element_located((By.ID, 'identifierId')))
+                        user_id = self.browser.find_element_by_id("identifierId")
+                        user_id.clear()
+                        user_id.send_keys(self.scholar_id)
+                        user_id.send_keys(Keys.RETURN)
+                        WebDriverWait(self.browser, self.timeout).until(
+                            EC.presence_of_element_located((By.NAME, 'password')))
+                        passw = self.browser.find_element_by_name("password")
+                        passw.send_keys(self.scholar_password)
+                        passw.send_keys(Keys.RETURN)
+                    else:
+                        log("Using Google Scholar without logging in.")
+
                     pg_url = "https://scholar.google.com"
                     self.browser.get(pg_url)
                     WebDriverWait(self.browser, self.timeout).until(
                         EC.presence_of_element_located((By.ID, 'gs_hdr_tsi')))
                     log("Loaded Google Scholar page.")
                     query = self.browser.find_element_by_id("gs_hdr_tsi")
+                    query.clear()
                     query.send_keys(q)
                     self.browser.find_element_by_id("gs_hdr_tsb").click()
                     log("Sent search query to website.")
@@ -360,7 +380,7 @@ class BookScraper(object):
                     has_next = True
                     rec_count = 0
                     while has_next and rec_count < self.max_recs:
-                        time.sleep(2)
+                        time.sleep(random.randrange(2, 8))
                         html_source = self.browser.page_source
                         try:
                             data = self._extract_gs_data(html_source)
