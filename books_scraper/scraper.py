@@ -1,5 +1,5 @@
 """
-Written with a lot of help from StackOverflow community 
+Written with a lot of help from StackOverflow community
 and Python API documentation. Greatly appreciated!
 """
 import os
@@ -96,13 +96,13 @@ class BookScraper(object):
             ". Timeout = "+str(self.timeout))
 
     def _init_selinium(self):
-        log("Starting webdriver...")
+        log("Initializing webdriver for "+self.web_browser)
         if "chrome" == self.web_browser:
             self.browser = webdriver.Chrome()
         elif "firefox" == self.web_browser:
             from selenium.webdriver.firefox.options import Options
             opt = Options()
-            opt.headless = False
+            opt.headless = True
             self.browser = webdriver.Firefox(options=opt)
         elif "safari" == self.web_browser:
             self.browser = webdriver.Safari()
@@ -116,10 +116,12 @@ class BookScraper(object):
     def _web_wait(self, by, val):
         self.web_wait.until(
             EC.presence_of_element_located((by, val)))
-        time.sleep(random.randrange(3, 10))
+        wtime = random.randrange(3, 10)
+        log("Waiting for {0}s".format(wtime))
+        time.sleep(wtime)
 
     def _crawl_goodreads_shelves(self):
-        crawled_files = []
+        crawled_files = {}
         self._init_selinium()
         login_url = "https://www.goodreads.com/user/sign_in"
         self.browser.get(login_url)
@@ -140,10 +142,12 @@ class BookScraper(object):
         if "Recent updates" in self.browser.title:
             shelf_url = "https://www.goodreads.com/shelf/show/{0}?page={1}"
             for gn in self.query.split(","):
+                gn = gn.strip()
+                crawled_files[gn] = []
                 no_of_shelves = math.ceil(int(self.max_recs)/50) + 1
                 for p in range(1, no_of_shelves):
                     html_file = "shelf_{0}_p{1}.html".format(gn, p)
-                    crawled_files.append(html_file)
+                    crawled_files[gn].append(html_file)
                     url = shelf_url.format(gn, p)
                     if self.use_cached_books and self._is_cached(html_file):
                         log("Page {0} already downloaded. Skipping to next.".format(
@@ -191,7 +195,7 @@ class BookScraper(object):
         try:
             val = soup.select(sel)[0].text.strip()
         except Exception:
-            log("**** Failed to get value for "+sel)
+            debug("**** Failed to get value for "+sel)
         return val
 
     def _get_book_detail(self, url):
@@ -276,8 +280,11 @@ class BookScraper(object):
                 book_url = n.find("a", {"class": "bookTitle"})["href"]
                 book.update(self._get_book_detail(book_url))
                 writer.writerow(book)
+                if books_count.val >= self.max_recs:
+                    break
                 books_count.val += 1
-                log("Processed {0} books.".format(books_count.val))
+                log("Processed {0}/{1} books in {2}.".format(
+                    books_count.val, self.max_recs, genre))
             except Exception as ex:
                 msg = str(ex)
                 log("Error in getting book info: "+msg+". Continuing.")
@@ -288,40 +295,39 @@ class BookScraper(object):
                     time.sleep(15)
 
     def scrape_goodreads_books(self):
-        bc = Obj()
         try:
             crawled_files = self._crawl_goodreads_shelves()
-            fn = "_".join(self.query.strip().split(","))\
-                .replace(" ", "_")+"_GOODREADS.csv"
-            out_file = "{0}/{1}".format(self.out_dir, fn)
-
-            with open(out_file, "w", newline='') as csvfile:
-                dw = csv.DictWriter(csvfile, ROW_KEYS, extrasaction='ignore')
-                dw.writeheader()
-                csvfile.flush()
-                shelf_pages = []
-                for file_name in crawled_files:
-                    # File name is like: "shelf_{0}_p{1}.html"
-                    shelf_pages.extend(
-                        glob.glob("{0}/{1}".format(self.html_dir, file_name)))
-
-                for h in shelf_pages:
-                    log("Extracting data from {0}".format(h))
-                    # "/parent/path/shelf_{1}_p{2}.html"
-                    gnr = h.split("/")[-1].split("_")[1]
-                    with open(h, 'r') as fp:
-                        soup = BeautifulSoup(fp, 'lxml')
-
-                    self._extract_books_from_shelf(
-                        gnr, dw, soup, books_count=bc)
+            for genre in crawled_files:
+                fn = genre+"_GOODREADS.csv"
+                out_file = "{0}/{1}".format(self.out_dir, fn)
+                
+                with open(out_file, "w", newline='') as csvfile:
+                    dw = csv.DictWriter(csvfile, ROW_KEYS, extrasaction='ignore')
+                    dw.writeheader()
                     csvfile.flush()
+                    shelf_pages = []
+                    for file_name in crawled_files[genre]:
+                        # File name is like: "shelf_{0}_p{1}.html"
+                        shelf_pages.extend(
+                            glob.glob("{0}/{1}".format(self.html_dir, file_name)))
+                    bc = Obj()
+                    for h in shelf_pages:
+                        log("Extracting data from {0}".format(h))
+                        # "/parent/path/shelf_{1}_p{2}.html"
+                        gnr = h.split("/")[-1].split("_")[1]
+                        with open(h, 'r') as fp:
+                            soup = BeautifulSoup(fp, 'lxml')
+
+                        self._extract_books_from_shelf(
+                            gnr, dw, soup, books_count=bc)
+                        csvfile.flush()
 
         except Exception as ex:
             log("Error occurred when crawing: "+str(ex))
             traceback.print_exc()
         except KeyboardInterrupt:
             log("Exiting on user request (pressed Ctrl+C)")
-        log("Total books = "+str(bc.val))
+
 
     def _extract_gs_data(self, html):
         soup = BeautifulSoup(html, "lxml")
@@ -331,8 +337,8 @@ class BookScraper(object):
         for obj in items:
             title = self._try_get_item(obj, "h3")
             temp = self._try_get_item(obj, "div.gs_ri > div.gs_a")
-            authors = temp[:temp.index("-")]
-            pub = temp[temp.index("-")+1:]
+            authors = temp[:temp.index("-")] if "-" in temp else temp
+            pub = temp[temp.index("-")+1:] if "-" in temp else "--"
             abst = self._try_get_item(obj, "div.gs_ri > div.gs_rs")
             cited_by = self._try_get_item(obj,
                                           "div.gs_ri > div.gs_fl > a:nth-child(3)").replace("Cited by ", "")
@@ -342,9 +348,75 @@ class BookScraper(object):
                          "citedby": cited_by, "url": url, "abstract": abst})
         return data
 
-    def screape_google_scholar(self):
-        log("Starting webdriver...")
+    def _google_scholar_pager(self, query_str):
+        log("Starting results paginator...")
         self._init_selinium()
+        # Login to google if credentials provided
+        try:
+            if self.scholar_id and self.scholar_password:
+                log("Logging in to Google Scholar.")
+                self.browser.get(
+                    "https://accounts.google.com/Login?hl=en&continue=https://scholar.google.com/")
+                self._web_wait(By.ID, 'identifierId')
+                user_id = self.browser.find_element_by_id(
+                    "identifierId")
+                user_id.clear()
+                user_id.send_keys(self.scholar_id)
+                user_id.send_keys(Keys.RETURN)
+                log("Sent the user ID to server.")
+                self._web_wait(By.NAME, 'password')
+                passw = self.browser.find_element_by_name(
+                    "password")
+                log("Found password input box.")
+                passw.send_keys(self.scholar_password)
+                time.sleep(4)
+                self.browser.find_element_by_id("passwordNext").click()
+                log("Sent the credentials to server.")
+            else:
+                log("Using Google Scholar without logging in.")
+        except Exception as ex:
+            traceback.print_exc()
+            log("Will attempt using Google Scholar without logging in.")
+
+        pg_url = "https://scholar.google.com"
+        self.browser.get(pg_url)
+        self._web_wait(By.ID, 'gs_hdr_tsi')
+        log("Loaded Google Scholar page.")
+        query = self.browser.find_element_by_id("gs_hdr_tsi")
+        query.clear()
+        query.send_keys(query_str)
+        query.send_keys(Keys.RETURN)
+        # self.browser.find_element_by_id("gs_hdr_tsb").click()
+        log("Sent search query to website.")
+        self._web_wait(By.CLASS_NAME, 'gs_ab_mdw')
+        has_next = True
+        page_count = 0
+        while has_next:
+            # Throttle the crawling regularly at random interval
+            if page_count >= random.randrange(5, 10):
+                ptt = random.randrange(6, 16)
+                time.sleep(ptt)
+                log("Throttling down the paginator by {0}s".format(ptt))
+                page_count = 0
+            else:
+               time.sleep(random.randrange(3, 7)) 
+            yield self.browser.page_source
+            page_count += 1
+            try:
+                nb = self.browser.find_element_by_link_text("Next")
+                if nb:
+                    log("Going to next page...")
+                    nb.click()
+                    self._web_wait(
+                        By.CLASS_NAME, 'gs_ico_nav_next')
+                else:
+                    has_next = False
+            except Exception as ex:
+                traceback.print_exc()
+                log("Error when paginating to next. "+str(ex))
+
+
+    def screape_google_scholar_paged(self):
         try:
             for q in self.query.split(","):
                 csv_path = self.out_dir + "/" + q.strip().replace(" ", "_")+"_gs.csv"
@@ -353,70 +425,22 @@ class BookScraper(object):
                                         extrasaction='ignore')
                     dw.writeheader()
                     csvfile.flush()
-
-                    # Login to google if credentials provided
-                    try:
-                        if self.scholar_id and self.scholar_password:
-                            log("Logging in to Google Scholar.")
-                            self.browser.get(
-                                "https://accounts.google.com/Login?hl=en&continue=https://scholar.google.com/")
-                            self._web_wait(By.ID, 'identifierId')
-                            user_id = self.browser.find_element_by_id(
-                                "identifierId")
-                            user_id.clear()
-                            user_id.send_keys(self.scholar_id)
-                            user_id.send_keys(Keys.RETURN)
-                            log("Sent the user ID to server.")
-                            self._web_wait(By.NAME, 'password')
-                            passw = self.browser.find_element_by_name(
-                                "password")
-                            log("Found password input box.")
-                            passw.send_keys(self.scholar_password)
-                            passw.send_keys(Keys.RETURN)
-                            log("Sent the credentials to server.")
-                        else:
-                            log("Using Google Scholar without logging in.")
-                    except Exception as ex:
-                        traceback.print_exc()
-                        log("Will attempt using Google Scholar without logging in.")
-
-                    pg_url = "https://scholar.google.com"
-                    self.browser.get(pg_url)
-                    self._web_wait(By.ID, 'gs_hdr_tsi')
-                    log("Loaded Google Scholar page.")
-                    query = self.browser.find_element_by_id("gs_hdr_tsi")
-                    query.clear()
-                    query.send_keys(q)
-                    self.browser.find_element_by_id("gs_hdr_tsb").click()
-                    log("Sent search query to website.")
-                    self._web_wait(By.CLASS_NAME, 'gs_ab_mdw')
-                    has_next = True
-                    rec_count = 0
-                    while has_next and rec_count < self.max_recs:
-                        time.sleep(random.randrange(5, 10))
-                        html_source = self.browser.page_source
+                    pager = self._google_scholar_pager(q)
+                    recs = 0
+                    while recs < self.max_recs:
                         try:
-                            data = self._extract_gs_data(html_source)
-                            rec_count += len(data)
+                            gsr_html = next(pager)
+                            log("Fetched {0}/{1} results.".format(recs, self.max_recs))
+                            if not gsr_html:
+                                break
+                            data = self._extract_gs_data(gsr_html)
+                            dw.writerows(data)
+                            csvfile.flush()
+                            recs += len(data)
                         except Exception as ex:
                             traceback.print_exc()
                             log("Error when extracting information from page. "+str(ex))
 
-                        try:
-                            nb = self.browser.find_element_by_link_text("Next")
-                            if nb:
-                                log("Going to next page...")
-                                nb.click()
-                                self._web_wait(
-                                    By.CLASS_NAME, 'gs_ico_nav_next')
-                            else:
-                                has_next = False
-                        except Exception as ex:
-                            traceback.print_exc()
-                            log("Error when paginating to next. "+str(ex))
-
-                        dw.writerows(data)
-                        csvfile.flush()
         except Exception as ex:
             traceback.print_exc()
         finally:
@@ -473,7 +497,7 @@ def main():
             scr.scrape_goodreads_books()
         else:
             scr = BookScraper(args.browser, args.pps, args.query)
-            scr.screape_google_scholar()
+            scr.screape_google_scholar_paged()
 
     except Exception as ex:
         log("Exiting. Error occurred. "+str(ex))

@@ -30,7 +30,7 @@ def main(cfg):
         if "goodreads" == data_src:
             bs.scrape_goodreads_books()
         elif "scholar" == data_src:
-            bs.screape_google_scholar()
+            bs.screape_google_scholar_paged()
         else:
             log(" Unsupported data source: "+data_src)
 
