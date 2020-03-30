@@ -12,39 +12,25 @@
     {% else %}
     <form action="/start" method="POST">
       <div class="form-group">
-        <label>Scrape data from: &nbsp;</label>
-        <div class="form-check form-check-inline">
-          <input class="form-check-input" type="radio" name="data_src" id="inlineRadio1" value="goodreads" required>
-          <label class="form-check-label" for="inlineRadio1">Goodreads</label>
-        </div>
-        <div class="form-check form-check-inline">
-          <input class="form-check-input" type="radio" name="data_src" id="inlineRadio2" value="scholar" required>
-          <label class="form-check-label" for="inlineRadio2">Google Scholar</label>
-        </div>
-      </div>
-      <div class="form-group">
-        <label for="maxrec">Max. records:</label>
+        <label for="maxrec">Max. No. of books:</label>
         <input type="number" name="max_rec" class="form-control" id="maxrec" aria-describedby="maxrecHelp" required>
         <small id="maxrecHelp" class="form-text text-muted">
-          The maximum number of results (number of books or articles) to fetch
-          for each query term.
+          The maximum number of books to fetch for each query genre.
         </small>
       </div>
       <div class="form-group">
-        <label for="genres">Genre list or query:</label>
+        <label for="genres">Genre list:</label>
         <input type="text" name="query" class="form-control" id="genres" aria-describedby="genresHelp" required>
         <small id="genresHelp" class="form-text text-muted">
-          For Goodreads case it is the comma-separated list of genre names Example: <span
+          A comma-separated list of genre names Example: <span
             class="text-monospace">Spirituality, Sikhism, Bible</span>.
-          For Google Scholar, it is the comma-separated list of queries. Example: <span class="text-monospace">research
-            Sikhism, research Spirituality</span>
         </small>
       </div>
       <div class="form-group">
         <label for="timeout">HTTP timeout (in s):</label>
         <input type="number" name="timeout" class="form-control" id="timeout" aria-describedby="timeoutHelp" value="10" required>
         <small id="timeoutHelp" class="form-text text-muted">
-          HTTP timeout in seconds for scraping requests to Google Scholar and Goodreads. Default is 10s.</span>
+          HTTP timeout in seconds for scraping requests to Goodreads. Default is 10s.</span>
         </small>
       </div>
       <div class="form-group">

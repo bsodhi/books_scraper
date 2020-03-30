@@ -1,30 +1,31 @@
+from werkzeug.utils import secure_filename
+from datetime import datetime as DT
+from flask.helpers import flash, send_file
+from getpass import getpass
+from pathlib import Path
+from passlib.hash import pbkdf2_sha256
+from subprocess import Popen
+from markupsafe import escape
+from flask import Flask, abort, session, redirect, url_for, request, render_template
+# from concurrent.futures.process import ProcessPoolExecutor
 import os
 import sys
+import json
+import signal
+import logging
+import shutil
+import glob
+import traceback
+import argparse
+import string
+import random
+import sqlite3
+import concurrent.futures
 # Allows importing from: ../../
 parent = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 print("In [{0}], appending [{1}] to system path.".format(__file__, parent))
 sys.path.append(parent)
 import books_scraper.scraper as SCR
-import sqlite3
-import random
-import string
-import argparse
-import traceback
-import glob
-import shutil
-import logging
-import signal
-import books_scraper
-
-from flask import Flask, abort, session, redirect, url_for, request, render_template
-from markupsafe import escape
-from subprocess import Popen
-from passlib.hash import pbkdf2_sha256
-from pathlib import Path
-from getpass import getpass
-from flask.helpers import flash, send_file
-from datetime import datetime as DT
-from werkzeug.utils import secure_filename
 
 UPLOAD_FOLDER = os.path.join(os.getcwd(), "gs_uploads")
 HTML_DIR = "{0}/html/".format(os.getcwd())
@@ -35,6 +36,8 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 logging.basicConfig(filename='scraper.log', level=logging.INFO)
 Path(UPLOAD_FOLDER).mkdir(parents=True, exist_ok=True)
 
+# PPE = ProcessPoolExecutor(max_workers=5)
+PPE = concurrent.futures.ThreadPoolExecutor(max_workers=5)
 
 def get_ts_str():
     return DT.now().strftime("%Y%m%d_%H%M%S")
@@ -84,83 +87,36 @@ def _add_user(login_id, pass_hashed, full_name, role="USER"):
         conn.commit()
 
 
-@app.route('/start', methods=['GET', 'POST'])
-def start():
-
-    if "login_id" not in session:
-        logging.warning("Illegal access to operation. Login required.")
-        return redirect(url_for('login'))
-
-    login_id = session['login_id']
-    out_dir = "{0}/{1}/{2}".format(os.getcwd(), login_id, get_ts_str())
-    Path(out_dir).mkdir(parents=True, exist_ok=True)
-
-    logging.info("Starting command in: "+os.getcwd())
-    data_src = request.form['data_src']
-    max_rec = request.form['max_rec']
-    query = request.form['query']
-    timeout = request.form['timeout']
-    dont_ucb = request.form.get('dont_ucb') == "on"
-
-    cmd_args = []
-    cmd_args.append(cfg_file_path)
-    cmd_args.append(timeout)
-    cmd_args.append("\""+query+"\"")
-    cmd_args.append(max_rec)
-    cmd_args.append(data_src)
-    cmd_args.append(out_dir)
-    cmd_args.append(HTML_DIR)
-    cmd_args.append(not dont_ucb)
-    cmd_args.append(" > {0}/task.log".format(out_dir))
-
-    mydir = os.getcwd()
-    cmd = "python {0}/books_scraper/run_scraper.py {1}".format(
-        mydir, " ".join(str(x) for x in cmd_args))
-    logging.info("Starting command: "+cmd)
-    proc = Popen([cmd], shell=True, stdin=None,
-                 stdout=None, stderr=None, close_fds=True)
+def _scrape_goodreads(query, max_rec, out_dir, dont_ucb, login_id):
     pid_file = os.path.join(out_dir, "pid")
-    with open(pid_file, "w") as pf:
-        pf.write(str(proc.pid))
-    return redirect(url_for('task_status'))
-
-
-@app.route('/signup', methods=['POST', 'GET'])
-def signup():
-    error = None
+    SCR.LOG_FILE = os.path.join(out_dir, "task.log")
     try:
-        if request.method == 'POST':
-            pw_hashed = pbkdf2_sha256.hash(request.form['password'])
-            _add_user(request.form['login_id'], pw_hashed,
-                      request.form['full_name'])
-            return render_template("index.html",
-                                   error="User created. Please login with your credentials.")
+        with open(pid_file, "w") as pif:
+            pif.write(query)
+
+        bs = SCR.BookScraper(query,
+                             max_recs=max_rec,
+                             use_cached_books=not dont_ucb,
+                             out_dir=out_dir,
+                             html_dir=HTML_DIR,
+                             gr_login=CONFIG["gr_login"],
+                             gr_password=CONFIG["gr_password"],
+                             web_browser=CONFIG["browser"],
+                             timeout=CONFIG["timeout"])
+        bs.scrape_goodreads_books()
 
     except Exception as ex:
-        logging.exception("Error occurred when signing up.")
-        error = str(ex)
-
-    return render_template('signup.html', error=error)
-
-
-@app.route('/login', methods=['POST', 'GET'])
-def login():
-    error = None
-    try:
-        if request.method == 'POST':
-            if _authenticate(request.form['login_id'],
-                             request.form['password']):
-                logging.info("Login successful.")
-                session['login_id'] = request.form['login_id']
-                return redirect(url_for('home'))
-            else:
-                error = 'Invalid username/password'
-    except Exception as ex:
-        logging.exception("Error occurred when logging in.")
-        error = str(ex)
-    # the code below is executed if the request method
-    # was GET or the credentials were invalid
-    return render_template('index.html', error=error)
+        msg = "Error occurred when processing googreads scraping."
+        logging.exception(msg)
+        return render_template("home.html", error=msg,
+                               name=escape(session['login_id']))
+    finally:
+        try:
+            if os.path.exists(pid_file):
+                os.remove(pid_file)
+            logging.info("Closed pending task for user "+login_id)
+        except Exception as ex2:
+            logging.exception("Failed to close the task.")
 
 
 def _fmt_date_str(dt_str):
@@ -180,6 +136,27 @@ def _existing_tasks(login_id):
         with open(pfile, "r") as pf:
             pids.append(pf.read())
     return pids
+
+
+@app.route('/start', methods=['GET', 'POST'])
+def start():
+
+    if "login_id" not in session:
+        logging.warning("Illegal access to operation. Login required.")
+        return redirect(url_for('login'))
+
+    login_id = session['login_id']
+    out_dir = os.path.join(os.getcwd(), login_id, get_ts_str())
+    Path(out_dir).mkdir(parents=True, exist_ok=True)
+
+    logging.info("Starting command in: "+os.getcwd())
+    max_rec = request.form['max_rec']
+    query = request.form['query']
+    timeout = request.form['timeout']
+    dont_ucb = request.form.get('dont_ucb') == "on"
+    PPE.submit(_scrape_goodreads, query, max_rec, out_dir, dont_ucb, login_id)
+
+    return redirect(url_for('task_status'))
 
 
 @app.route('/status')
@@ -254,12 +231,50 @@ def clear_dir(dir_path):
         return redirect(url_for('task_status'))
 
 
+@app.route('/signup', methods=['POST', 'GET'])
+def signup():
+    error = None
+    try:
+        if request.method == 'POST':
+            pw_hashed = pbkdf2_sha256.hash(request.form['password'])
+            _add_user(request.form['login_id'], pw_hashed,
+                      request.form['full_name'])
+            return render_template("index.html",
+                                   error="User created. Please login with your credentials.")
+
+    except Exception as ex:
+        logging.exception("Error occurred when signing up.")
+        error = str(ex)
+
+    return render_template('signup.html', error=error)
+
+
+@app.route('/login', methods=['POST', 'GET'])
+def login():
+    error = None
+    try:
+        if request.method == 'POST':
+            if _authenticate(request.form['login_id'],
+                             request.form['password']):
+                logging.info("Login successful.")
+                session['login_id'] = request.form['login_id']
+                return redirect(url_for('home'))
+            else:
+                error = 'Invalid username/password'
+    except Exception as ex:
+        logging.exception("Error occurred when logging in.")
+        error = str(ex)
+    # the code below is executed if the request method
+    # was GET or the credentials were invalid
+    return render_template('index.html', error=error)
+
+
 @app.route('/')
 def index():
     return render_template('index.html')
 
 
-@app.route('/home')
+@app.route('/gr')
 def home():
     if "login_id" not in session:
         logging.warning("Illegal access to operation. Login required.")
@@ -284,7 +299,7 @@ def _process_gs_upload(file_path, login_id):
     bs.google_scholar_local(file_path)
 
 
-@app.route('/upload', methods=['GET', 'POST'])
+@app.route('/gs', methods=['GET', 'POST'])
 def upload_file():
     if "login_id" not in session:
         logging.warning("Illegal access to operation. Login required.")
@@ -297,15 +312,15 @@ def upload_file():
             if 'zip_file' not in request.files:
                 logging.info("No file part found in request.")
                 return render_template('upload_gs.html',
-                                    error="No file part found!",
-                                    name=escape(login_id))
+                                       error="No file part found!",
+                                       name=escape(login_id))
             file = request.files['zip_file']
             # if user does not select file, browser also
             # submit an empty part without filename
             if file.filename == '':
                 return render_template('upload_gs.html',
-                                    error="No file data found!",
-                                    name=escape(login_id))
+                                       error="No file data found!",
+                                       name=escape(login_id))
             if file and file.filename.endswith(".zip"):
                 sfn = secure_filename(file.filename)
                 file_path = os.path.join(app.config['UPLOAD_FOLDER'], sfn)
@@ -315,44 +330,40 @@ def upload_file():
             else:
                 logging.error("File type not allowed!")
                 return render_template('upload_gs.html',
-                                    error="File type not allowed!",
-                                    name=escape(login_id))
-                
+                                       error="File type not allowed!",
+                                       name=escape(login_id))
+
         else:
             logging.info("GET request for upload.")
 
         return render_template('upload_gs.html',
-                            name=escape(login_id))
+                               name=escape(login_id))
     except Exception as ex:
         logging.exception("Error when uploading.")
         return render_template('upload_gs.html', error=str(ex),
-                            name=escape(login_id))
+                               name=escape(login_id))
 
 
-cfg_file_path = None
+CONFIG = None
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("-p", "--port-no", type=int, default=5500,
-                        dest="port", help="Port number.")
-    parser.add_argument("-t", "--host", type=str, default="0.0.0.0",
-                        dest="host", help="Host")
     parser.add_argument("-d", "--debug", type=bool, nargs='?',
                         const=True, default=False,
                         dest="debug", help="Run the server in debug mode.")
-    parser.add_argument("-c", "--run-config", type=str, default="run_config.json",
-                        dest="cfg_file_path", help="Scrapper runner config file path.")
-    parser.add_argument("ssl_cert", type=str,
-                        help="SSL certificate pem file path.")
-    parser.add_argument("ssl_key", type=str,
-                        help="SSL key pem file path.")
+    parser.add_argument("cfg_file_path", type=str,
+                        help="Scrapper runner config file path.")
     args = parser.parse_args()
-    cfg_file_path = args.cfg_file_path
     app.secret_key = random_str(size=30)
     _init_db()
-    # app.run(host=args.host, port=args.port,
-    #         ssl_context='adhoc', debug=args.debug)
-    app.run(host=args.host,
-            port=args.port,
-            ssl_context=(args.ssl_cert, args.ssl_key),
+
+    with open(args.cfg_file_path, "r") as cfg_file:
+        CONFIG = json.load(cfg_file)
+
+    logging.info("CONFIG: "+str(CONFIG))
+
+    app.run(host=CONFIG["host"],
+            port=CONFIG["port"],
+            threaded=True,
+            ssl_context=(CONFIG["ssl_cert_file"], CONFIG["ssl_key_file"]),
             debug=args.debug)
