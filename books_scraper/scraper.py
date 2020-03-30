@@ -24,6 +24,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 from getpass import getpass
 from selenium.webdriver.common.keys import Keys
+from zipfile import ZipFile
 
 # Disable the SSL warnings
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -72,8 +73,17 @@ def make_http_request(url, timeout=10):
                         timeout=timeout)
 
 
+def try_get_item(soup, sel):
+    val = "--"
+    try:
+        val = soup.select(sel)[0].text.strip()
+    except Exception:
+        debug("**** Failed to get value for "+sel)
+    return val
+
+
 class BookScraper(object):
-    def __init__(self, web_browser, max_recs, query, html_dir=None,
+    def __init__(self, query, web_browser="firefox", max_recs=10, html_dir=None,
                  use_cached_books=True, gr_login=None,
                  gr_password=None, out_dir="output", timeout=10,
                  scholar_id=None, scholar_password=None):
@@ -190,14 +200,6 @@ class BookScraper(object):
             log("\t**** Could not find publish date.")
         return pub_dt
 
-    def _try_get_item(self, soup, sel):
-        val = "--"
-        try:
-            val = soup.select(sel)[0].text.strip()
-        except Exception:
-            debug("**** Failed to get value for "+sel)
-        return val
-
     def _get_book_detail(self, url):
         book_info = {"book_format": "--", "pages": "--", "synopsis": "--",
                      "isbn": "--", "language": "--", "pub_year": "--",
@@ -225,15 +227,15 @@ class BookScraper(object):
         if not soup:
             return book_info
 
-        book_info["avg_rating"] = self._try_get_item(
+        book_info["avg_rating"] = try_get_item(
             soup, "#bookMeta > span:nth-child(2)")
-        book_info["ratings"] = self._try_get_item(
+        book_info["ratings"] = try_get_item(
             soup, "a.gr-hyperlink:nth-child(7)")
-        book_info["reviews"] = self._try_get_item(
+        book_info["reviews"] = try_get_item(
             soup, "a.gr-hyperlink:nth-child(9)")
-        book_info["author"] = self._try_get_item(
+        book_info["author"] = try_get_item(
             soup, "#bookAuthors > span:nth-child(2)")
-        book_info["title"] = self._try_get_item(soup, "#bookTitle")
+        book_info["title"] = try_get_item(soup, "#bookTitle")
 
         dn = soup.find(
             "div", {"id": "details", "class": "uitext darkGreyText"})
@@ -262,7 +264,7 @@ class BookScraper(object):
             book_info["pub_year"] = self._get_pub_date(
                 pub_yr[0].text) if pub_yr else "--"
 
-            book_info["synopsis"] = self._try_get_item(
+            book_info["synopsis"] = try_get_item(
                 soup, "div#description.readable.stacked > span:nth-child(2)")
             book_info["url"] = url
             return book_info
@@ -300,9 +302,10 @@ class BookScraper(object):
             for genre in crawled_files:
                 fn = genre+"_GOODREADS.csv"
                 out_file = "{0}/{1}".format(self.out_dir, fn)
-                
+
                 with open(out_file, "w", newline='') as csvfile:
-                    dw = csv.DictWriter(csvfile, ROW_KEYS, extrasaction='ignore')
+                    dw = csv.DictWriter(csvfile, ROW_KEYS,
+                                        extrasaction='ignore')
                     dw.writeheader()
                     csvfile.flush()
                     shelf_pages = []
@@ -328,20 +331,19 @@ class BookScraper(object):
         except KeyboardInterrupt:
             log("Exiting on user request (pressed Ctrl+C)")
 
-
     def _extract_gs_data(self, html):
         soup = BeautifulSoup(html, "lxml")
         items = soup.select("#gs_res_ccl_mid > div.gs_r.gs_or.gs_scl")
 
         data = []
         for obj in items:
-            title = self._try_get_item(obj, "h3")
-            temp = self._try_get_item(obj, "div.gs_ri > div.gs_a")
+            title = try_get_item(obj, "h3")
+            temp = try_get_item(obj, "div.gs_ri > div.gs_a")
             authors = temp[:temp.index("-")] if "-" in temp else temp
             pub = temp[temp.index("-")+1:] if "-" in temp else "--"
-            abst = self._try_get_item(obj, "div.gs_ri > div.gs_rs")
-            cited_by = self._try_get_item(obj,
-                                          "div.gs_ri > div.gs_fl > a:nth-child(3)").replace("Cited by ", "")
+            abst = try_get_item(obj, "div.gs_ri > div.gs_rs")
+            cited_by = try_get_item(obj,
+                                    "div.gs_ri > div.gs_fl > a:nth-child(3)").replace("Cited by ", "")
             url = obj.select_one("div.gs_ggs.gs_fl > div > div > a")
             url = url["href"] if url else "--"
             data.append({"title": title, "author": authors, "publication": pub,
@@ -399,7 +401,7 @@ class BookScraper(object):
                 log("Throttling down the paginator by {0}s".format(ptt))
                 page_count = 0
             else:
-               time.sleep(random.randrange(3, 7)) 
+                time.sleep(random.randrange(3, 7))
             yield self.browser.page_source
             page_count += 1
             try:
@@ -414,7 +416,6 @@ class BookScraper(object):
             except Exception as ex:
                 traceback.print_exc()
                 log("Error when paginating to next. "+str(ex))
-
 
     def screape_google_scholar_paged(self):
         try:
@@ -445,6 +446,37 @@ class BookScraper(object):
             traceback.print_exc()
         finally:
             self.browser.close()
+
+    def google_scholar_local(self, zip_file):
+        csv_path = os.path.join(self.out_dir, "local_cs.csv")
+        with open(csv_path, "w", newline='') as csvfile:
+            dw = csv.DictWriter(csvfile, GS_ROW_KEYS,
+                                extrasaction='ignore')
+            dw.writeheader()
+            csvfile.flush()
+            with ZipFile(zip_file) as myzip:
+                recs = 0
+                zitems = [x for x in myzip.namelist()
+                          if x.endswith(".html")
+                          and "__MACOSX" not in x
+                          and "DS_Store" not in x]
+                log("ZIP file {0} contains {1} items.".format(
+                    zip_file, len(zitems)))
+                for zz in zitems:
+                    try:
+                        log("Extracting HTML from ZIP entry: "+str(zz))
+                        with myzip.open(zz) as zf:
+                            html = zf.read()
+                            log("Length of ZIP entry HTML: "+str(len(html)))
+                            data = self._extract_gs_data(html)
+                            dw.writerows(data)
+                            csvfile.flush()
+                            recs += 1
+                            log("Processed {0}/{1} files.".format(recs,
+                                                                  len(zitems)))
+                    except Exception as ex:
+                        traceback.print_exc()
+                        log("Error when extracting information from page. "+str(ex))
 
 
 def main():
@@ -492,11 +524,12 @@ def main():
                 return
 
             Path(args.html_dir).mkdir(parents=True, exist_ok=True)
-            scr = BookScraper(args.browser, args.pps,
-                              args.genre_list, args.html_dir, overwrite=oep)
+            scr = BookScraper(args.genre_list, web_browser=args.browser,
+                              max_recs=args.pps, html_dir=args.html_dir, overwrite=oep)
             scr.scrape_goodreads_books()
         else:
-            scr = BookScraper(args.browser, args.pps, args.query)
+            scr = BookScraper(args.query, web_browser=args.browser,
+                              max_recs=args.pps)
             scr.screape_google_scholar_paged()
 
     except Exception as ex:

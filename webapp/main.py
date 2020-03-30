@@ -1,7 +1,10 @@
-from flask import Flask, abort, session, redirect, url_for, request, render_template
-from markupsafe import escape
-from subprocess import Popen
 import os
+import sys
+# Allows importing from: ../../
+parent = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+print("In [{0}], appending [{1}] to system path.".format(__file__, parent))
+sys.path.append(parent)
+import books_scraper.scraper as SCR
 import sqlite3
 import random
 import string
@@ -10,15 +13,27 @@ import traceback
 import glob
 import shutil
 import logging
+import signal
+import books_scraper
+
+from flask import Flask, abort, session, redirect, url_for, request, render_template
+from markupsafe import escape
+from subprocess import Popen
 from passlib.hash import pbkdf2_sha256
 from pathlib import Path
 from getpass import getpass
-from flask.helpers import send_file
+from flask.helpers import flash, send_file
 from datetime import datetime as DT
-import signal
+from werkzeug.utils import secure_filename
+
+UPLOAD_FOLDER = os.path.join(os.getcwd(), "gs_uploads")
+HTML_DIR = "{0}/html/".format(os.getcwd())
+Path(HTML_DIR).mkdir(parents=True, exist_ok=True)
 
 app = Flask(__name__)
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 logging.basicConfig(filename='scraper.log', level=logging.INFO)
+Path(UPLOAD_FOLDER).mkdir(parents=True, exist_ok=True)
 
 
 def get_ts_str():
@@ -79,8 +94,6 @@ def start():
     login_id = session['login_id']
     out_dir = "{0}/{1}/{2}".format(os.getcwd(), login_id, get_ts_str())
     Path(out_dir).mkdir(parents=True, exist_ok=True)
-    html_dir = "{0}/html/".format(os.getcwd())
-    Path(html_dir).mkdir(parents=True, exist_ok=True)
 
     logging.info("Starting command in: "+os.getcwd())
     data_src = request.form['data_src']
@@ -96,7 +109,7 @@ def start():
     cmd_args.append(max_rec)
     cmd_args.append(data_src)
     cmd_args.append(out_dir)
-    cmd_args.append(html_dir if html_dir else "none")
+    cmd_args.append(HTML_DIR)
     cmd_args.append(not dont_ucb)
     cmd_args.append(" > {0}/task.log".format(out_dir))
 
@@ -261,6 +274,59 @@ def logout():
     # remove the username from the session if it's there
     session.pop('login_id', None)
     return redirect(url_for('index'))
+
+
+def _process_gs_upload(file_path, login_id):
+    logging.info("Processing: "+file_path)
+    out_dir = "{0}/{1}/{2}".format(os.getcwd(), login_id, get_ts_str())
+    Path(out_dir).mkdir(parents=True, exist_ok=True)
+    bs = SCR.BookScraper("", html_dir=HTML_DIR, out_dir=out_dir)
+    bs.google_scholar_local(file_path)
+
+
+@app.route('/upload', methods=['GET', 'POST'])
+def upload_file():
+    if "login_id" not in session:
+        logging.warning("Illegal access to operation. Login required.")
+        return redirect(url_for('login'))
+    login_id = session['login_id']
+    logging.info("Upload destination: "+UPLOAD_FOLDER)
+    try:
+        if request.method == 'POST':
+            # check if the post request has the file part
+            if 'zip_file' not in request.files:
+                logging.info("No file part found in request.")
+                return render_template('upload_gs.html',
+                                    error="No file part found!",
+                                    name=escape(login_id))
+            file = request.files['zip_file']
+            # if user does not select file, browser also
+            # submit an empty part without filename
+            if file.filename == '':
+                return render_template('upload_gs.html',
+                                    error="No file data found!",
+                                    name=escape(login_id))
+            if file and file.filename.endswith(".zip"):
+                sfn = secure_filename(file.filename)
+                file_path = os.path.join(app.config['UPLOAD_FOLDER'], sfn)
+                file.save(file_path)
+                _process_gs_upload(file_path, login_id)
+                return redirect(url_for('task_status'))
+            else:
+                logging.error("File type not allowed!")
+                return render_template('upload_gs.html',
+                                    error="File type not allowed!",
+                                    name=escape(login_id))
+                
+        else:
+            logging.info("GET request for upload.")
+
+        return render_template('upload_gs.html',
+                            name=escape(login_id))
+    except Exception as ex:
+        logging.exception("Error when uploading.")
+        return render_template('upload_gs.html', error=str(ex),
+                            name=escape(login_id))
 
 
 cfg_file_path = None

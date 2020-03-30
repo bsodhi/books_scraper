@@ -1,9 +1,13 @@
-import sys
-import traceback
 import os
+import sys
+# Allows importing from: ../../
+parent = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+print("In [{0}], appending [{1}] to system path.".format(__file__, parent))
+sys.path.append(parent)
+import books_scraper.scraper as SCR
+import traceback
 import json
 import argparse
-from scraper import *
 
 
 def main(cfg):
@@ -20,8 +24,8 @@ def main(cfg):
     use_cached_books = cfg["ucb"]
     timeout = cfg["timeout"]
 
-    log("Starting scraper.")
-    bs = BookScraper("firefox", max_recs, query, html_dir=html_dir,
+    SCR.log("Starting scraper.")
+    bs = SCR.BookScraper(query, max_recs=max_recs, html_dir=html_dir,
                      gr_login=gr_login, gr_password=gr_password,
                      out_dir=out_dir, use_cached_books=use_cached_books,
                      timeout=timeout, scholar_id=scholar_id,
@@ -32,11 +36,11 @@ def main(cfg):
         elif "scholar" == data_src:
             bs.screape_google_scholar_paged()
         else:
-            log(" Unsupported data source: "+data_src)
+            SCR.log(" Unsupported data source: "+data_src)
 
-        log("Scraping completed.")
+        SCR.log("Scraping completed.")
     except Exception as ex:
-        log("Error occurred when scraping data: "+str(ex))
+        SCR.log("Error occurred when scraping data: "+str(ex))
         traceback.print_exc()
     finally:
         pid_file = os.path.join(out_dir, "pid")
@@ -60,7 +64,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     argdict = vars(args)
-    log("Args: "+str(argdict))
+    SCR.log("Args: "+str(argdict))
     with open(args.cfg_file, "r") as cfg_file:
         cfg = json.load(cfg_file)
         cfg.update(argdict)

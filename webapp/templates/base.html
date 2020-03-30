@@ -21,8 +21,12 @@
     {% block nav %}
     {% endblock %}
   </div>
-  <div id="main" class="container">{% block main %}
-    {{error}}
+
+  <div id="main" class="container">
+    {%if error%}
+    <span class="alert alert-warning">{{error}}</span>
+    {%endif%}
+    {% block main %}
     <form action="/login" method="POST">
       Login ID: <input name="login_id" type="text" /><br /><br />
       Password: <input name="password" type="password" /><br />

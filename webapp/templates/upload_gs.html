@@ -1,0 +1,22 @@
+{% extends "secure_base.html" %}
+{% block title %}Upload Google Scholar pages{% endblock %}
+{% block main %}
+<div class="card">
+  <div class="card-header">
+    Upload Google Scholar pages
+  </div>
+  <div class="card-body">
+    <form action="/upload" method="POST" enctype=multipart/form-data>
+      <div class="form-group">
+        <label for="gsf">Select files:</label>
+        <input type="file" name="zip_file" class="form-control" id="gsf" aria-describedby="gsfHelp" required>
+        <small id="gsfHelp" class="form-text text-muted">
+          Select a ZIP file containing HTML files of Google Scholar results saved from <a href="https://addons.mozilla.org/en-US/firefox/addon/single-file/" target="_blank">SingleFile</a> Firefox plugin available here: <a href="https://addons.mozilla.org/en-US/firefox/addon/single-file/" target="_blank">https://addons.mozilla.org/en-US/firefox/addon/single-file/</a>
+        </small>
+      </div>
+      <button type="submit" class="btn btn-primary">Submit</button>
+    </form>
+  </div>
+</div>
+
+{% endblock %}
