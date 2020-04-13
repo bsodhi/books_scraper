@@ -6,6 +6,7 @@ from pathlib import Path
 from passlib.hash import pbkdf2_sha256
 from subprocess import Popen
 from markupsafe import escape
+from functools import wraps
 from flask import Flask, abort, session, redirect, url_for, request, render_template
 # from concurrent.futures.process import ProcessPoolExecutor
 import os
@@ -37,7 +38,7 @@ logging.basicConfig(filename='scraper.log', level=logging.INFO)
 Path(UPLOAD_FOLDER).mkdir(parents=True, exist_ok=True)
 
 # PPE = ProcessPoolExecutor(max_workers=5)
-PPE = concurrent.futures.ThreadPoolExecutor(max_workers=5)
+TPE = concurrent.futures.ThreadPoolExecutor(max_workers=5)
 
 def get_ts_str():
     return DT.now().strftime("%Y%m%d_%H%M%S")
@@ -46,6 +47,16 @@ def get_ts_str():
 def random_str(size=10):
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=size))
 
+def auth_check(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        if "login_id" not in session:
+            logging.warning("Illegal access to operation. Login required.")
+            return redirect(url_for('login'))
+        else:
+            logging.info("User is authenticated already.")
+        return f(*args, **kwargs)
+    return wrapper
 
 def _init_db():
     with sqlite3.connect('app.db') as conn:
@@ -139,12 +150,8 @@ def _existing_tasks(login_id):
 
 
 @app.route('/start', methods=['GET', 'POST'])
+@auth_check
 def start():
-
-    if "login_id" not in session:
-        logging.warning("Illegal access to operation. Login required.")
-        return redirect(url_for('login'))
-
     login_id = session['login_id']
     out_dir = os.path.join(os.getcwd(), login_id, get_ts_str())
     Path(out_dir).mkdir(parents=True, exist_ok=True)
@@ -154,17 +161,14 @@ def start():
     query = request.form['query']
     timeout = request.form['timeout']
     dont_ucb = request.form.get('dont_ucb') == "on"
-    PPE.submit(_scrape_goodreads, query, max_rec, out_dir, dont_ucb, login_id)
+    TPE.submit(_scrape_goodreads, query, max_rec, out_dir, dont_ucb, login_id)
 
     return redirect(url_for('task_status'))
 
 
 @app.route('/status')
+@auth_check
 def task_status():
-    if "login_id" not in session:
-        logging.warning("Illegal access to operation. Login required.")
-        return redirect(url_for('login'))
-
     path = "{0}/{1}".format(os.getcwd(), session['login_id'])
     if os.path.exists(path):
         subfolders = [f.path for f in os.scandir(path) if f.is_dir()]
@@ -186,11 +190,8 @@ def task_status():
 
 @app.route('/', defaults={'file_path': ''})
 @app.route('/<path:file_path>')
+@auth_check
 def get_file(file_path):
-    if "login_id" not in session:
-        logging.warning("Illegal access to operation. Login required.")
-        return redirect(url_for('login'))
-
     base_path = "{0}/{1}".format(os.getcwd(), session['login_id'])
     abs_path = os.path.join(base_path, file_path)
 
@@ -209,11 +210,8 @@ def get_file(file_path):
 
 @app.route('/clear', defaults={'dir_path': ''})
 @app.route('/clear/<path:dir_path>')
+@auth_check
 def clear_dir(dir_path):
-    if "login_id" not in session:
-        logging.warning("Illegal access to operation. Login required.")
-        return redirect(url_for('login'))
-
     logging.debug("dir_path = "+dir_path)
     if "/" in dir_path or ".." in dir_path:
         logging.error("!!! Invalid path: "+dir_path)
@@ -271,14 +269,14 @@ def login():
 
 @app.route('/')
 def index():
+    if "login_id" in session:
+        return redirect(url_for('home')) 
     return render_template('index.html')
 
 
 @app.route('/gr')
+@auth_check
 def home():
-    if "login_id" not in session:
-        logging.warning("Illegal access to operation. Login required.")
-        return redirect(url_for('login'))
     pids = _existing_tasks(session['login_id'])
     return render_template('home.html',
                            name=escape(session['login_id']), pids=pids)
@@ -300,10 +298,8 @@ def _process_gs_upload(file_path, login_id):
 
 
 @app.route('/gs', methods=['GET', 'POST'])
+@auth_check
 def upload_file():
-    if "login_id" not in session:
-        logging.warning("Illegal access to operation. Login required.")
-        return redirect(url_for('login'))
     login_id = session['login_id']
     logging.info("Upload destination: "+UPLOAD_FOLDER)
     try:
@@ -342,6 +338,73 @@ def upload_file():
         logging.exception("Error when uploading.")
         return render_template('upload_gs.html', error=str(ex),
                                name=escape(login_id))
+
+
+def validate_fuzzy_request():
+    msg = []
+    if 'libcsv' not in request.files or request.files['libcsv'].filename == '':
+        msg.append("Library data CSV is missing.")
+    if 'grcsv' not in request.files or request.files['grcsv'].filename == '':
+        msg.append("Goodreads data CSV is missing.")
+    return msg
+
+def _process_fuzzy_match(login_id, fp_gr, fp_lib, score, match_mode):
+    from webapp.fuzzy_match import find_fuzz
+    try:
+        out_file = os.path.join(os.getcwd(), login_id, 
+                    "{0}_fuzzy_result.csv".format(get_ts_str()))
+        log_file = os.path.join(os.getcwd(), login_id, 
+                    "fuzzy_task.log")
+        find_fuzz(fp_gr, fp_lib, score, match_mode, 
+                    out_file=out_file, log_file=log_file)
+        logging.info("Fuzzy check complete.")
+    except Exception as ex:
+        logging.exception("Error occurred.")
+
+
+@app.route('/fuzz', methods=['GET', 'POST'])
+@auth_check
+def fuzzy_check():
+    login_id = session['login_id']
+    out_dir = os.path.join(os.getcwd(), login_id)
+    Path(out_dir).mkdir(parents=True, exist_ok=True)
+    logs_file = os.path.join(out_dir, "fuzzy_task.log")
+    try:
+        if request.method == 'POST':
+            msg = validate_fuzzy_request()
+            if len(msg) > 0:
+                logging.error(". ".join(msg))
+                return render_template('fuzzy.html',
+                                       error=". ".join(msg),
+                                       name=escape(login_id))
+            
+            lib_csv, gr_csv = request.files['libcsv'], request.files['grcsv']
+            sfn_libcsv = secure_filename(lib_csv.filename)
+            sfn_grcsv = secure_filename(gr_csv.filename)
+
+            fp_lib = os.path.join(out_dir, sfn_libcsv)
+            lib_csv.save(fp_lib)
+
+            fp_gr = os.path.join(out_dir, sfn_grcsv)
+            gr_csv.save(fp_gr)
+
+            match_mode = request.form['match_mode']
+            score = request.form['score']
+
+            TPE.submit(_process_fuzzy_match, login_id, fp_gr, fp_lib, score, match_mode)
+            return redirect(url_for('fuzzy_check'))
+
+        else:
+            logging.info("GET request for upload.")
+            res_files = glob.glob("{0}/*_fuzzy_result.csv".format(out_dir))
+            return render_template('fuzzy.html', name=escape(login_id), 
+            data=res_files, logs_file=logs_file if Path(logs_file).exists() else None)
+
+    except Exception as ex:
+        logging.exception("Error when handling fuzzy check.")
+        return render_template('fuzzy.html', error=str(ex),
+                               name=escape(login_id),
+                               logs_file=logs_file if Path(logs_file).exists() else None)
 
 
 CONFIG = None
