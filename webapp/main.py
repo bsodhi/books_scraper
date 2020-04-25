@@ -289,12 +289,12 @@ def logout():
     return redirect(url_for('index'))
 
 
-def _process_gs_upload(file_path, login_id):
+def _process_zip_upload(file_path, login_id, src_type):
     logging.info("Processing: "+file_path)
     out_dir = "{0}/{1}/{2}".format(os.getcwd(), login_id, get_ts_str())
     Path(out_dir).mkdir(parents=True, exist_ok=True)
     bs = SCR.BookScraper("", html_dir=HTML_DIR, out_dir=out_dir)
-    bs.google_scholar_local(file_path)
+    bs.extract_from_zip(file_path, src_type)
 
 
 @app.route('/gs', methods=['GET', 'POST'])
@@ -321,7 +321,8 @@ def upload_file():
                 sfn = secure_filename(file.filename)
                 file_path = os.path.join(app.config['UPLOAD_FOLDER'], sfn)
                 file.save(file_path)
-                _process_gs_upload(file_path, login_id)
+                src_type = request.form.get("src_type")
+                _process_zip_upload(file_path, login_id, src_type)
                 return redirect(url_for('task_status'))
             else:
                 logging.error("File type not allowed!")

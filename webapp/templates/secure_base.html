@@ -14,13 +14,15 @@
     <span class="navbar-toggler-icon"></span>
   </button>
   <div class="collapse navbar-collapse" id="navbarNavAltMarkup">
-    <div class="navbar-nav">
-      <a class="nav-item nav-link" href="/gr">Scrape Goodreads</a>
-      <a class="nav-item nav-link" href="/gs">Scrape Google Scholar</a>
+    <div class="navbar-nav mr-auto">
+      <a class="nav-item nav-link" href="/gr">Goodreads</a>
+      <a class="nav-item nav-link" href="/gs">Upload HTML (Google/NDL)</a>
       <a class="nav-item nav-link" href="/status">Task Status</a>
-      <a class="nav-item nav-link" href="/fuzz">Fuzzy Match</a>
-      <a class="nav-item nav-link float-right" href="/logout">Logout</a> 
-      <span class="ml-4 navbar-text">(Logged in as {{name}})</span>
+      <!-- <a class="nav-item nav-link" href="/fuzz">Fuzzy Match</a> -->
+    </div>
+    <div class="navbar-text float-right">
+      <span>(Logged in as {{name}})</span>
+      <a href="/logout">LOGOUT</a>
     </div>
   </div>
 </nav>

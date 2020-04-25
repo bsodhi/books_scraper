@@ -38,6 +38,7 @@ ROW_KEYS = ['author', 'title', 'language', 'genre', 'avg_rating',
             'ratings', 'reviews', 'book_format', 'pages',
             'isbn', 'pub_year', 'url', 'synopsis']
 GS_ROW_KEYS = ["author", "title", "publication", "citedby", "url", "abstract"]
+NDL_ROW_KEYS = ["author", "title", "language", "url", "abstract"]
 
 
 class Obj:
@@ -352,10 +353,33 @@ class BookScraper(object):
                          "citedby": cited_by, "url": url, "abstract": abst})
         return data
 
-    def google_scholar_local(self, zip_file):
+    def _extract_ndl_data(self, html):
+        soup = BeautifulSoup(html, "lxml")
+        items = soup.select("#browse-result-group > div.list-group-item")
+        print("Records count: {}".format(len(items)))
+        data = []
+        for obj in items:
+            try:
+                title_obj = obj.select_one("div.col-md-11.col-sm-12 > h4 > a")
+                url = title_obj["href"] if title_obj else "--"
+                title = title_obj.text.strip()
+                authors = try_get_item(obj, "div.doc-author.overflow-off")
+                abst = try_get_item(obj, "div.col-sm-7.hidden-xs > font")
+                lang_obj = obj.select_one("div > div.col-sm-5 > div.icons > span")
+                lang = lang_obj["title"] if lang_obj else "--"
+
+                data.append({"title": title, "author": authors, "language": lang,
+                            "url": url, "abstract": abst})
+            except Exception as ex:
+                traceback.print_exc()
+                log("Error when extracting information from NDL page. "+str(ex))
+        return data
+
+    def extract_from_zip(self, zip_file, src_type):
         csv_path = os.path.join(self.out_dir, "local_cs.csv")
         with open(csv_path, "w", newline='') as csvfile:
-            dw = csv.DictWriter(csvfile, GS_ROW_KEYS,
+            dw = csv.DictWriter(csvfile,
+                                GS_ROW_KEYS if src_type == "GS" else NDL_ROW_KEYS,
                                 extrasaction='ignore')
             dw.writeheader()
             csvfile.flush()
@@ -373,7 +397,13 @@ class BookScraper(object):
                         with myzip.open(zz) as zf:
                             html = zf.read()
                             log("Length of ZIP entry HTML: "+str(len(html)))
-                            data = self._extract_gs_data(html)
+                            if src_type == "NDL":
+                                data = self._extract_ndl_data(html)
+                            elif src_type == "GS":
+                                data = self._extract_gs_data(html)
+                            else:
+                                raise Exception(
+                                    "Unsupported HTML source: "+str(src_type))
                             dw.writerows(data)
                             csvfile.flush()
                             recs += 1
