@@ -36,7 +36,7 @@ HTTP_TIMEOUT_SEC = 5
 HTTP_DELAY_SEC = 2
 ROW_KEYS = ['author', 'title', 'language', 'genre', 'avg_rating',
             'ratings', 'reviews', 'book_format', 'pages',
-            'isbn', 'pub_year', 'url', 'synopsis']
+            'isbn', 'pub_year', 'publisher', 'url', 'synopsis']
 GS_ROW_KEYS = ["author", "title", "publication", "citedby", "url", "abstract"]
 NDL_ROW_KEYS = ["author", "title", "language", "url", "abstract"]
 
@@ -196,18 +196,24 @@ class BookScraper(object):
 
     def _get_pub_date(self, dt_str):
         pub_dt = '--'
+        pub = '--'
         try:
             s = dt_str.strip()
-            pub_dt = s[s.find("Published")+9:s.find("by")].strip()
+            bi = s.find(" by ")
+            if s.startswith("Published") and bi > 0:
+                pub_dt = s[9:bi].strip()
+                pub = s[bi+4:].strip()
+
         except AttributeError:
             log("\t**** Could not find publish date.")
-        return pub_dt
+        return pub_dt, pub
 
     def _get_book_detail(self, url):
         book_info = {"book_format": "--", "pages": "--", "synopsis": "--",
                      "isbn": "--", "language": "--", "pub_year": "--",
                      "url": url, "avg_rating": "--", "ratings": "--",
-                     "reviews": "--", "author": "--", "title": "--"}
+                     "reviews": "--", "author": "--", "title": "--",
+                     "publisher": "--"}
 
         # https://www.goodreads.com/book/show/6708.The_Power_of_Now
         soup = None
@@ -264,8 +270,10 @@ class BookScraper(object):
             book_info["language"] = temp.text.strip() if temp else "--"
 
             pub_yr = soup.select("div.row:nth-child(2)")
-            book_info["pub_year"] = self._get_pub_date(
-                pub_yr[0].text) if pub_yr else "--"
+            
+            pub_dt, pub = self._get_pub_date(pub_yr[0].text) if pub_yr else ("--","--")
+            book_info["pub_year"] = pub_dt
+            book_info["publisher"] = pub
 
             book_info["synopsis"] = try_get_item(
                 soup, "div#description.readable.stacked > span:nth-child(2)")
