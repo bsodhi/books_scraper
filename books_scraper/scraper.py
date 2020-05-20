@@ -361,6 +361,45 @@ class BookScraper(object):
                          "citedby": cited_by, "url": url, "abstract": abst})
         return data
 
+    def _extract_amazon_data(self, html):
+        soup = BeautifulSoup(html, "lxml")
+        items = soup.select("div.s-main-slot.s-result-list > div.s-result-item")
+        print("Records count: {}".format(len(items)))
+        data = []
+        sel_title = "div:nth-child(1) > span:nth-child(1) > div:nth-child(1) > div:nth-child(1) > div:nth-child(2) > div:nth-child(2) > div:nth-child(1) > div:nth-child(1) > div:nth-child(1) > div:nth-child(1) > div:nth-child(1) > h2:nth-child(1) > a:nth-child(1) > span:nth-child(1)"
+
+        sel_auth = "div:nth-child(1) > span:nth-child(1) > div:nth-child(1) > div:nth-child(1) > div:nth-child(2) > div:nth-child(2) > div:nth-child(1) > div:nth-child(1) > div:nth-child(1) > div:nth-child(1) > div:nth-child(1) > div:nth-child(2) > a:nth-child(2)"
+
+        sel_url = "div:nth-child(1) > span:nth-child(1) > div:nth-child(1) > div:nth-child(1) > div:nth-child(2) > div:nth-child(2) > div:nth-child(1) > div:nth-child(1) > div:nth-child(1) > div:nth-child(1) > div:nth-child(1) > h2:nth-child(1) > a:nth-child(1)"
+
+        sel_book_type = "div:nth-child(1) > span:nth-child(1) > div:nth-child(1) > div:nth-child(1) > div:nth-child(2) > div:nth-child(2) > div:nth-child(1) > div:nth-child(2) > div:nth-child(1) > div:nth-child(1)"
+
+        sel_rating = "div:nth-child(1) > span:nth-child(1) > div:nth-child(1) > div:nth-child(1) > div:nth-child(2) > div:nth-child(2) > div:nth-child(1) > div:nth-child(1) > div:nth-child(1) > div:nth-child(1) > div:nth-child(2) > div:nth-child(1) > span:nth-child(1)"
+
+        sel_count_rating = "div:nth-child(1) > span:nth-child(1) > div:nth-child(1) > div:nth-child(1) > div:nth-child(2) > div:nth-child(2) > div:nth-child(1) > div:nth-child(1) > div:nth-child(1) > div:nth-child(1) > div:nth-child(2) > div:nth-child(1) > span:nth-child(2)"
+
+        for obj in items:
+            book_info = dict(zip(ROW_KEYS,["" for _ in ROW_KEYS]))
+            try:
+                url_obj = obj.select_one(sel_url)
+                book_info["url"] = url_obj["href"] if url_obj else "--"
+                book_info["title"] = try_get_item(obj, sel_title)
+                book_info["author"]  = try_get_item(obj, sel_auth)
+
+                rt_obj = obj.select_one(sel_rating)
+                book_info["avg_rating"]  = rt_obj["aria-label"] if rt_obj else "--"
+                rtc_obj = obj.select_one(sel_count_rating)
+                book_info["ratings"]  = rtc_obj["aria-label"] if rtc_obj else "--"
+                
+                book_info["book_format"]  = try_get_item(obj, sel_book_type)
+
+                data.append(book_info)
+            except Exception as ex:
+                traceback.print_exc()
+                log("Error when extracting information from Amazon page. "+str(ex))
+        return data
+
+
     def _extract_ndl_data(self, html):
         soup = BeautifulSoup(html, "lxml")
         items = soup.select("#browse-result-group > div.list-group-item")
@@ -386,9 +425,14 @@ class BookScraper(object):
     def extract_from_zip(self, zip_file, src_type):
         csv_path = os.path.join(self.out_dir, "local_cs.csv")
         with open(csv_path, "w", newline='') as csvfile:
-            dw = csv.DictWriter(csvfile,
-                                GS_ROW_KEYS if src_type == "GS" else NDL_ROW_KEYS,
-                                extrasaction='ignore')
+            hdr_keys = []
+            if src_type == "AZ":
+                hdr_keys = ROW_KEYS
+            elif src_type == "GS":
+                hdr_keys = GS_ROW_KEYS
+            else:
+                hdr_keys = NDL_ROW_KEYS
+            dw = csv.DictWriter(csvfile, hdr_keys, extrasaction='ignore')
             dw.writeheader()
             csvfile.flush()
             with ZipFile(zip_file) as myzip:
@@ -409,6 +453,8 @@ class BookScraper(object):
                                 data = self._extract_ndl_data(html)
                             elif src_type == "GS":
                                 data = self._extract_gs_data(html)
+                            elif src_type == "AZ":
+                                data = self._extract_amazon_data(html)
                             else:
                                 raise Exception(
                                     "Unsupported HTML source: "+str(src_type))
