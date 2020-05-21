@@ -26,7 +26,8 @@ import concurrent.futures
 parent = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 print("In [{0}], appending [{1}] to system path.".format(__file__, parent))
 sys.path.append(parent)
-import books_scraper.scraper as SCR
+if parent:
+    import books_scraper.scraper as SCR
 
 UPLOAD_FOLDER = os.path.join(os.getcwd(), "gs_uploads")
 HTML_DIR = "{0}/html/".format(os.getcwd())
@@ -40,12 +41,14 @@ Path(UPLOAD_FOLDER).mkdir(parents=True, exist_ok=True)
 # PPE = ProcessPoolExecutor(max_workers=5)
 TPE = concurrent.futures.ThreadPoolExecutor(max_workers=5)
 
+
 def get_ts_str():
     return DT.now().strftime("%Y%m%d_%H%M%S")
 
 
 def random_str(size=10):
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=size))
+
 
 def auth_check(f):
     @wraps(f)
@@ -57,6 +60,7 @@ def auth_check(f):
             logging.info("User is authenticated already.")
         return f(*args, **kwargs)
     return wrapper
+
 
 def _init_db():
     with sqlite3.connect('app.db') as conn:
@@ -113,7 +117,8 @@ def _scrape_goodreads(query, max_rec, out_dir, dont_ucb, login_id):
                              gr_login=CONFIG["gr_login"],
                              gr_password=CONFIG["gr_password"],
                              web_browser=CONFIG["browser"],
-                             timeout=CONFIG["timeout"])
+                             timeout=CONFIG["timeout"],
+                             http_delay_sec=CONFIG["http_delay_sec"])
         bs.scrape_goodreads_books()
 
     except Exception as ex:
@@ -270,7 +275,7 @@ def login():
 @app.route('/')
 def index():
     if "login_id" in session:
-        return redirect(url_for('home')) 
+        return redirect(url_for('home'))
     return render_template('index.html')
 
 
@@ -293,7 +298,8 @@ def _process_zip_upload(file_path, login_id, src_type):
     logging.info("Processing: "+file_path)
     out_dir = "{0}/{1}/{2}".format(os.getcwd(), login_id, get_ts_str())
     Path(out_dir).mkdir(parents=True, exist_ok=True)
-    bs = SCR.BookScraper("", html_dir=HTML_DIR, out_dir=out_dir)
+    bs = SCR.BookScraper("", html_dir=HTML_DIR, out_dir=out_dir,
+                         http_delay_sec=CONFIG["http_delay_sec"])
     bs.extract_from_zip(file_path, src_type)
 
 
@@ -349,15 +355,16 @@ def validate_fuzzy_request():
         msg.append("Goodreads data CSV is missing.")
     return msg
 
+
 def _process_fuzzy_match(login_id, fp_gr, fp_lib, score, match_mode):
     from webapp.fuzzy_match import find_fuzz
     try:
-        out_file = os.path.join(os.getcwd(), login_id, 
-                    "{0}_fuzzy_result.csv".format(get_ts_str()))
-        log_file = os.path.join(os.getcwd(), login_id, 
-                    "fuzzy_task.log")
-        find_fuzz(fp_gr, fp_lib, score, match_mode, 
-                    out_file=out_file, log_file=log_file)
+        out_file = os.path.join(os.getcwd(), login_id,
+                                "{0}_fuzzy_result.csv".format(get_ts_str()))
+        log_file = os.path.join(os.getcwd(), login_id,
+                                "fuzzy_task.log")
+        find_fuzz(fp_gr, fp_lib, score, match_mode,
+                  out_file=out_file, log_file=log_file)
         logging.info("Fuzzy check complete.")
     except Exception as ex:
         logging.exception("Error occurred.")
@@ -378,7 +385,7 @@ def fuzzy_check():
                 return render_template('fuzzy.html',
                                        error=". ".join(msg),
                                        name=escape(login_id))
-            
+
             lib_csv, gr_csv = request.files['libcsv'], request.files['grcsv']
             sfn_libcsv = secure_filename(lib_csv.filename)
             sfn_grcsv = secure_filename(gr_csv.filename)
@@ -392,14 +399,15 @@ def fuzzy_check():
             match_mode = request.form['match_mode']
             score = request.form['score']
 
-            TPE.submit(_process_fuzzy_match, login_id, fp_gr, fp_lib, score, match_mode)
+            TPE.submit(_process_fuzzy_match, login_id,
+                       fp_gr, fp_lib, score, match_mode)
             return redirect(url_for('fuzzy_check'))
 
         else:
             logging.info("GET request for upload.")
             res_files = glob.glob("{0}/*_fuzzy_result.csv".format(out_dir))
-            return render_template('fuzzy.html', name=escape(login_id), 
-            data=res_files, logs_file=logs_file if Path(logs_file).exists() else None)
+            return render_template('fuzzy.html', name=escape(login_id),
+                                   data=res_files, logs_file=logs_file if Path(logs_file).exists() else None)
 
     except Exception as ex:
         logging.exception("Error when handling fuzzy check.")

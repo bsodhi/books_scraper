@@ -71,9 +71,9 @@ def overwrite_existing_path(path_str, options=None):
     return fo
 
 
-def make_http_request(url, timeout=10):
-    log("Requesting URL {0}. Delay {1}s".format(url, HTTP_DELAY_SEC))
-    time.sleep(HTTP_DELAY_SEC)
+def make_http_request(url, timeout=10, http_delay_sec=4):
+    log("Requesting URL {0}. Delay {1}s".format(url, http_delay_sec))
+    time.sleep(http_delay_sec)
     return requests.get(url,
                         headers={'User-Agent': UA.random},
                         timeout=timeout)
@@ -91,8 +91,9 @@ def try_get_item(soup, sel):
 class BookScraper(object):
     def __init__(self, query, web_browser="firefox", max_recs=10, html_dir=None,
                  use_cached_books=True, gr_login=None,
-                 gr_password=None, out_dir="output", timeout=10):
+                 gr_password=None, out_dir="output", timeout=10, http_delay_sec=2):
         self.timeout = timeout
+        self.http_delay_sec = http_delay_sec
         self.web_browser = web_browser
         self.max_recs = int(max_recs)
         self.query = query
@@ -209,11 +210,7 @@ class BookScraper(object):
         return pub_dt, pub
 
     def _get_book_detail(self, url):
-        book_info = {"book_format": "--", "pages": "--", "synopsis": "--",
-                     "isbn": "--", "language": "--", "pub_year": "--",
-                     "url": url, "avg_rating": "--", "ratings": "--",
-                     "reviews": "--", "author": "--", "title": "--",
-                     "publisher": "--"}
+        book_info = dict(zip(ROW_KEYS, ["" for _ in ROW_KEYS]))
 
         # https://www.goodreads.com/book/show/6708.The_Power_of_Now
         soup = None
@@ -225,7 +222,8 @@ class BookScraper(object):
             soup = BeautifulSoup(html, "lxml")
         else:
             page_url = "https://www.goodreads.com"+url
-            page = make_http_request(page_url, timeout=self.timeout)
+            page = make_http_request(page_url, timeout=self.timeout,
+                                     http_delay_sec=self.http_delay_sec)
             if page.status_code == requests.codes.ok:
                 self._cache_page(file_name, str(page.content, encoding="utf8"))
                 soup = BeautifulSoup(page.content, 'lxml')
@@ -270,8 +268,9 @@ class BookScraper(object):
             book_info["language"] = temp.text.strip() if temp else "--"
 
             pub_yr = soup.select("div.row:nth-child(2)")
-            
-            pub_dt, pub = self._get_pub_date(pub_yr[0].text) if pub_yr else ("--","--")
+
+            pub_dt, pub = self._get_pub_date(
+                pub_yr[0].text) if pub_yr else ("--", "--")
             book_info["pub_year"] = pub_dt
             book_info["publisher"] = pub
 
@@ -361,9 +360,50 @@ class BookScraper(object):
                          "citedby": cited_by, "url": url, "abstract": abst})
         return data
 
+    def _get_amazon_book_info(self, html):
+        book_info = dict(zip(ROW_KEYS, ["" for _ in ROW_KEYS]))
+        try:
+            soup = BeautifulSoup(html, "lxml")
+            # Extract book info
+            book_info["genre"] = try_get_item(
+                soup, "ul.a-size-small > li:nth-last-child(1)")
+            book_info["synopsis"] = try_get_item(soup, 
+                "#bookDescription_feature_div").replace("\n", "")
+            book_info["title"] = try_get_item(soup, "#title > span")
+            al = soup.select("span.author")
+            authors = []
+            for a in al:
+                authors.append(a.text.strip())
+            book_info["author"] = ", ".join(authors).replace("\n", "")
+            book_info["avg_rating"] = try_get_item(soup, "span.reviewCountTextLinkedHistogram")
+            book_info["ratings"] = try_get_item(soup, "#acrCustomerReviewText")
+            book_info["book_format"] = try_get_item(soup, "#productSubtitle")
+            
+            ul = soup.select(
+                "td.bucket > div:nth-child(2) > ul:nth-child(1) > li")
+            for li in ul:
+                txt = li.text.strip()
+                # print(">>> TEXT={}".format(txt))
+                if txt.startswith("Print Length:"):
+                    book_info["pages"] = txt.split(":")[1].strip()
+                elif txt.startswith("Publisher:"):
+                    book_info["publisher"] = txt.split(":")[1].strip()
+                elif txt.startswith("Publication Date:"):
+                    book_info["pub_year"] = txt.split(":")[1].strip()
+                elif txt.startswith("Language:"):
+                    book_info["language"] = txt.split(":")[1].strip()
+                elif txt.startswith("Format:"):
+                    book_info["book_format"] = txt.split(":")[1].strip()
+
+        except Exception as ex:
+            log("Error occurred when fetching Amazon book info: {}".format(ex))
+        log("Book info: {}".format(book_info))
+        return [book_info]
+
     def _extract_amazon_data(self, html):
         soup = BeautifulSoup(html, "lxml")
-        items = soup.select("div.s-main-slot.s-result-list > div.s-result-item")
+        items = soup.select(
+            "div.s-main-slot.s-result-list > div.s-result-item")
         print("Records count: {}".format(len(items)))
         data = []
         sel_title = "div:nth-child(1) > span:nth-child(1) > div:nth-child(1) > div:nth-child(1) > div:nth-child(2) > div:nth-child(2) > div:nth-child(1) > div:nth-child(1) > div:nth-child(1) > div:nth-child(1) > div:nth-child(1) > h2:nth-child(1) > a:nth-child(1) > span:nth-child(1)"
@@ -379,26 +419,25 @@ class BookScraper(object):
         sel_count_rating = "div:nth-child(1) > span:nth-child(1) > div:nth-child(1) > div:nth-child(1) > div:nth-child(2) > div:nth-child(2) > div:nth-child(1) > div:nth-child(1) > div:nth-child(1) > div:nth-child(1) > div:nth-child(2) > div:nth-child(1) > span:nth-child(2)"
 
         for obj in items:
-            book_info = dict(zip(ROW_KEYS,["" for _ in ROW_KEYS]))
+            book_info = dict(zip(ROW_KEYS, ["" for _ in ROW_KEYS]))
             try:
                 url_obj = obj.select_one(sel_url)
                 book_info["url"] = url_obj["href"] if url_obj else "--"
                 book_info["title"] = try_get_item(obj, sel_title)
-                book_info["author"]  = try_get_item(obj, sel_auth)
+                book_info["author"] = try_get_item(obj, sel_auth)
 
                 rt_obj = obj.select_one(sel_rating)
-                book_info["avg_rating"]  = rt_obj["aria-label"] if rt_obj else "--"
+                book_info["avg_rating"] = rt_obj["aria-label"] if rt_obj else "--"
                 rtc_obj = obj.select_one(sel_count_rating)
-                book_info["ratings"]  = rtc_obj["aria-label"] if rtc_obj else "--"
-                
-                book_info["book_format"]  = try_get_item(obj, sel_book_type)
+                book_info["ratings"] = rtc_obj["aria-label"] if rtc_obj else "--"
+
+                book_info["book_format"] = try_get_item(obj, sel_book_type)
 
                 data.append(book_info)
             except Exception as ex:
                 traceback.print_exc()
                 log("Error when extracting information from Amazon page. "+str(ex))
         return data
-
 
     def _extract_ndl_data(self, html):
         soup = BeautifulSoup(html, "lxml")
@@ -412,11 +451,12 @@ class BookScraper(object):
                 title = title_obj.text.strip()
                 authors = try_get_item(obj, "div.doc-author.overflow-off")
                 abst = try_get_item(obj, "div.col-sm-7.hidden-xs > font")
-                lang_obj = obj.select_one("div > div.col-sm-5 > div.icons > span")
+                lang_obj = obj.select_one(
+                    "div > div.col-sm-5 > div.icons > span")
                 lang = lang_obj["title"] if lang_obj else "--"
 
                 data.append({"title": title, "author": authors, "language": lang,
-                            "url": url, "abstract": abst})
+                             "url": url, "abstract": abst})
             except Exception as ex:
                 traceback.print_exc()
                 log("Error when extracting information from NDL page. "+str(ex))
@@ -426,7 +466,7 @@ class BookScraper(object):
         csv_path = os.path.join(self.out_dir, "local_cs.csv")
         with open(csv_path, "w", newline='') as csvfile:
             hdr_keys = []
-            if src_type == "AZ":
+            if src_type == "AZ" or src_type == "AZB" :
                 hdr_keys = ROW_KEYS
             elif src_type == "GS":
                 hdr_keys = GS_ROW_KEYS
@@ -455,6 +495,8 @@ class BookScraper(object):
                                 data = self._extract_gs_data(html)
                             elif src_type == "AZ":
                                 data = self._extract_amazon_data(html)
+                            elif src_type == "AZB":
+                                data = self._get_amazon_book_info(html)
                             else:
                                 raise Exception(
                                     "Unsupported HTML source: "+str(src_type))
