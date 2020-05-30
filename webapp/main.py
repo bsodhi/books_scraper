@@ -437,5 +437,5 @@ if __name__ == "__main__":
     app.run(host=CONFIG["host"],
             port=CONFIG["port"],
             threaded=True,
-            ssl_context=(CONFIG["ssl_cert_file"], CONFIG["ssl_key_file"]),
+            # ssl_context=(CONFIG["ssl_cert_file"], CONFIG["ssl_key_file"]),
             debug=args.debug)
