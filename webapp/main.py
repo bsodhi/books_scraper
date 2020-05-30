@@ -34,6 +34,7 @@ HTML_DIR = "{0}/html/".format(os.getcwd())
 Path(HTML_DIR).mkdir(parents=True, exist_ok=True)
 
 app = Flask(__name__)
+app.config['APPLICATION_ROOT'] = '/books'
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 logging.basicConfig(filename='scraper.log', level=logging.INFO)
 Path(UPLOAD_FOLDER).mkdir(parents=True, exist_ok=True)
