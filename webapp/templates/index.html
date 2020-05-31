@@ -2,7 +2,7 @@
 
 {% block nav %}
 <nav class="navbar navbar-expand-lg navbar navbar-dark bg-dark">
-  <a class="navbar-brand" href="/">
+  <a class="navbar-brand" href="#">
     <img src="/static/img/logo.png" width="30" height="30" alt="">
   </a>
   <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNavAltMarkup"
@@ -11,7 +11,7 @@
   </button>
   <div class="collapse navbar-collapse" id="navbarNavAltMarkup">
     <div class="navbar-nav">
-      <a class="nav-item nav-link" href="/signup">Signup</a>
+      <a class="nav-item nav-link" href="signup">Signup</a>
     </div>
   </div>
 </nav>
@@ -19,7 +19,7 @@
 {% block main %}
 
 <div class="container d-flex justify-content-center align-self-center">
-    <form class="form-signin" action="/login" method="POST">
+    <form class="form-signin" action="login" method="POST">
         <img class="mb-4" src="/static/img/logo.png" alt="" width="72" height="72" />
         <h1 class="h3 mb-3 font-weight-normal">Please sign in</h1>
         <label for="loginId" class="sr-only">Login ID</label>

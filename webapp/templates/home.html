@@ -7,10 +7,10 @@
   </div>
   <div class="card-body">
     {% if pids|length > 0 %}
-    <p>There are {{pids|length}} <a href="/status">existing tasks</a>.
-      Please wait for them to finish, or you can delete them <a href="/status">here</a>. </p>
+    <p>There are {{pids|length}} <a href="status">existing tasks</a>.
+      Please wait for them to finish, or you can delete them <a href="status">here</a>. </p>
     {% else %}
-    <form action="/start" method="POST">
+    <form action="start" method="POST">
       <div class="form-group">
         <label for="maxrec">Max. No. of books:</label>
         <input type="number" name="max_rec" class="form-control" id="maxrec" aria-describedby="maxrecHelp" required>

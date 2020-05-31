@@ -24,7 +24,7 @@
           Task submitted at: {{item["folder_label"]}} HRS  
           <span class='badge {% if item["status"] == "RUNNING" %}badge-danger{% else %}badge-info{% endif %}'>{{item["status"]}}</span>
           <a class="ml-4 btn btn-sm btn-danger" 
-          href='/clear/{{item["folder"]}}'onclick="return confirm('Are you sure?')">Delete</a>
+          href='clear/{{item["folder"]}}'onclick="return confirm('Are you sure?')">Delete</a>
         <ul>
           {%- for ff in item["files"] %}
             <li>
