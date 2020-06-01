@@ -5,7 +5,7 @@ import argparse
 import json
 import logging
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='static', static_url_path='/books/static')
 app.register_blueprint(V.vbp, url_prefix='/books')
 
 if __name__ == "__main__":
