@@ -360,6 +360,46 @@ class BookScraper(object):
                          "citedby": cited_by, "url": url, "abstract": abst})
         return data
 
+    def _get_loc_item(self, txt, key):
+        try:
+            ss = [x.strip() for x in txt.split("|")]
+            return [x.split(":")[1].strip() 
+                for x in ss if x.startswith(key)][0]
+        except Exception as ex:
+            return "--"
+    
+    def _get_loc_books_info(self, html):
+        books = []
+        try:
+            soup = BeautifulSoup(html, "lxml")
+            # Extract book info
+            head = try_get_item(soup, "h1.page-heading")
+            head = head[head.index(":")+1:].strip()
+            genre = self._get_loc_item(head, "SUBJECT")
+            lang = self._get_loc_item(head, "Language")
+
+            ul = soup.select("li.search-results-list")
+            for li in ul:
+                try:
+                    book_info = dict(zip(ROW_KEYS, ["" for _ in ROW_KEYS]))
+                    book_info["genre"] = genre
+                    book_info["language"] = lang
+                    book_info["book_format"] = try_get_item(li, "div.resultListTextCell div.search-results-list-description-format")
+                    book_info["author"] = try_get_item(li, "div.resultListTextCell div.search-results-list-description-name")
+                    book_info["title"] = try_get_item(li, "div.resultListTextCell div.search-results-list-description-title")
+                    pub = try_get_item(li, "div.resultListTextCell div.search-results-list-description-date")
+                    book_info["publisher"] = pub[:pub.rfind(" ")]
+                    book_info["pub_year"] = pub[pub.rfind(" ")+1:].strip()
+                    books.append(book_info)
+                    log("Book info: {}".format(book_info))
+                except Exception as ex1:
+                    log("Error occurred when extracting book info: {}".format(ex1))
+
+        except Exception as ex:
+            log("Error occurred when fetching extracting books: {}".format(ex))
+        
+        return books
+
     def _get_amazon_book_info(self, html):
         book_info = dict(zip(ROW_KEYS, ["" for _ in ROW_KEYS]))
         try:
@@ -466,7 +506,7 @@ class BookScraper(object):
         csv_path = os.path.join(self.out_dir, "local_cs.csv")
         with open(csv_path, "w", newline='') as csvfile:
             hdr_keys = []
-            if src_type == "AZ" or src_type == "AZB" :
+            if src_type == "AZ" or src_type == "AZB" or src_type == "LOC" :
                 hdr_keys = ROW_KEYS
             elif src_type == "GS":
                 hdr_keys = GS_ROW_KEYS
@@ -497,6 +537,8 @@ class BookScraper(object):
                                 data = self._extract_amazon_data(html)
                             elif src_type == "AZB":
                                 data = self._get_amazon_book_info(html)
+                            elif src_type == "LOC":
+                                data = self._get_loc_books_info(html)
                             else:
                                 raise Exception(
                                     "Unsupported HTML source: "+str(src_type))
