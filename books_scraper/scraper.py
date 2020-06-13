@@ -361,12 +361,15 @@ class BookScraper(object):
         return data
 
     def _get_loc_item(self, txt, key):
+        ival = "--"
         try:
             ss = [x.strip() for x in txt.split("|")]
-            return [x.split(":")[1].strip() 
+            ival = [x.split(":")[1].strip() 
                 for x in ss if x.startswith(key)][0]
         except Exception as ex:
-            return "--"
+            pass
+        log("Item value: {0} = {1}".format(key, ival))
+        return ival
     
     def _get_loc_books_info(self, html):
         books = []
@@ -376,6 +379,8 @@ class BookScraper(object):
             head = try_get_item(soup, "h1.page-heading")
             head = head[head.index(":")+1:].strip()
             genre = self._get_loc_item(head, "SUBJECT")
+            if genre == "--":
+                genre = self._get_loc_item(head, "ALL")
             lang = self._get_loc_item(head, "Language")
 
             ul = soup.select("li.search-results-list")
