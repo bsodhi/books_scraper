@@ -225,21 +225,21 @@ def clear_dir(dir_path):
         return redirect(url_for('bp.task_status'))
 
 
-def signup():
-    error = None
-    try:
-        if request.method == 'POST':
-            pw_hashed = pbkdf2_sha256.hash(request.form['password'])
-            _add_user(request.form['login_id'], pw_hashed,
-                      request.form['full_name'])
-            return render_template("index.html",
-                                   error="User created. Please login with your credentials.")
+# def signup():
+#     error = None
+#     try:
+#         if request.method == 'POST':
+#             pw_hashed = pbkdf2_sha256.hash(request.form['password'])
+#             _add_user(request.form['login_id'], pw_hashed,
+#                       request.form['full_name'])
+#             return render_template("index.html",
+#                                    error="User created. Please login with your credentials.")
 
-    except Exception as ex:
-        logging.exception("Error occurred when signing up.")
-        error = str(ex)
+#     except Exception as ex:
+#         logging.exception("Error occurred when signing up.")
+#         error = str(ex)
 
-    return render_template('signup.html', error=error)
+#     return render_template('signup.html', error=error)
 
 
 def login():
@@ -411,4 +411,4 @@ vbp.add_url_rule('/gs', view_func=upload_file, methods=['GET', 'POST'])
 vbp.add_url_rule('/gr', view_func=home, methods=['GET'])
 vbp.add_url_rule('/', view_func=index, methods=['GET'])
 vbp.add_url_rule('/login', view_func=login, methods=['GET', 'POST'])
-vbp.add_url_rule('/signup', view_func=signup, methods=['GET', 'POST'])
+# vbp.add_url_rule('/signup', view_func=signup, methods=['GET', 'POST'])
