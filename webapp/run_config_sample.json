@@ -1,6 +1,7 @@
 {
     "browser": "firefox",
     "timeout": 10,
+    "http_delay_sec": 5,
     "gr_login": "YOUR_LOGIN",
     "gr_password": "YOUR_PASSWORD",
     "scholar_id": "YOUR_LOGIN",
